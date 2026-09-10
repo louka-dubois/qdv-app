@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: qdvapp
+    runtime: docker
+    repo: https://github.com/louka-dubois/qdv-app
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ConnectionStrings__DefaultConnection
+        value: Data Source=qdvapp.db
+      - key: Smtp__Host
+        value: smtp.gmail.com
+      - key: Smtp__Port
+        value: "587"
+      - key: Smtp__FromEmail
+        value: duboisbegl@gmail.com
+      - key: Smtp__FromName
+        value: QDVapp Vérifications
+      - key: Smtp__Username
+        sync: false
+      - key: Smtp__Password
+        sync: false

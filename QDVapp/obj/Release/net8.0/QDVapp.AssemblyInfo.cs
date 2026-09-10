@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("QDVapp")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cbcf09ab5cff43e30802528039356a707f47f967")]
 [assembly: System.Reflection.AssemblyProductAttribute("QDVapp")]
 [assembly: System.Reflection.AssemblyTitleAttribute("QDVapp")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
