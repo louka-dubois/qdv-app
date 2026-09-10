@@ -10,11 +10,13 @@ namespace QDVapp.Areas.Identity.Pages.Account;
 public class LoginModel : PageModel
 {
     private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly ILogger<LoginModel> _logger;
 
-    public LoginModel(SignInManager<ApplicationUser> signInManager, ILogger<LoginModel> logger)
+    public LoginModel(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, ILogger<LoginModel> logger)
     {
         _signInManager = signInManager;
+        _userManager = userManager;
         _logger = logger;
     }
 
@@ -77,6 +79,35 @@ public class LoginModel : PageModel
                 ModelState.AddModelError(string.Empty, "Tentative de connexion invalide.");
                 return Page();
             }
+        }
+
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostGuestAsync(string? returnUrl = null)
+    {
+        returnUrl ??= Url.Content("~/");
+
+        var guestId = Guid.NewGuid().ToString("N");
+
+        var user = new ApplicationUser
+        {
+            UserName = "invite-" + guestId,
+            Email = $"invite-{guestId}@qdvapp.local",
+            EmailConfirmed = true
+        };
+
+        var result = await _userManager.CreateAsync(user);
+        if (result.Succeeded)
+        {
+            await _signInManager.SignInAsync(user, isPersistent: false);
+            _logger.LogInformation("Guest signed in.");
+            return LocalRedirect(returnUrl);
+        }
+
+        foreach (var error in result.Errors)
+        {
+            ModelState.AddModelError(string.Empty, error.Description);
         }
 
         return Page();

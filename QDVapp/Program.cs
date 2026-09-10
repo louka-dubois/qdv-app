@@ -21,7 +21,11 @@ public class Program
             options.UseSqlite(connectionString));
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
-        builder.Services.AddDefaultIdentity<ApplicationUser>(options => options.SignIn.RequireConfirmedAccount = true)
+        builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
+        {
+            options.SignIn.RequireConfirmedAccount = true;
+            options.User.AllowedUserNameCharacters += "é ";
+        })
             .AddEntityFrameworkStores<ApplicationDbContext>();
         builder.Services.AddScoped<IEmailSender<ApplicationUser>, SmtpEmailSender>();
         builder.Services.AddAuthorization(options =>
