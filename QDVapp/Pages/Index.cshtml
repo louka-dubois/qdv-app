@@ -1,0 +1,166 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Accueil";
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<partial name="_UploadReportAlert" model="Model.UploadReport"/>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card text-bg-primary h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.TotalProjets</div>
+                <div class="small opacity-75">Projets en cours</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-warning h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.ProjetsEnRetard</div>
+                <div class="small opacity-75">Projets en retard</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-info h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.HeuresRestantes.ToString("0") h</div>
+                <div class="small opacity-75">Heures restantes totales</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-danger h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.HeuresRestantesEnRetard.ToString("0") h</div>
+                <div class="small opacity-75">Heures en retard</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Répartition par statut</h5>
+                <div style="height:340px; display:flex; align-items:center; justify-content:center; position:relative"><canvas id="statusChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Heures restantes par vendeur (top 10)</h5>
+                <div style="height:340px; display:flex; align-items:center; justify-content:center; position:relative"><canvas id="vendeurChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Mettre à jour Atelier Projets</h5>
+                <div class="upload-dropzone" data-upload-url="?handler=UploadAtelier" id="dropzoneAtelier">
+                    <div class="upload-dropzone-content">
+                        <span class="upload-dropzone-icon">&#128194;</span>
+                        <p class="mb-1">Glissez le fichier <strong>Atelier - Projets</strong> ici</p>
+                        <small class="text-muted">.xlsx uniquement</small>
+                        <input type="file" class="d-none" accept=".xlsx" id="fileInputAtelier"/>
+                    </div>
+                    <div class="upload-dropzone-progress d-none">
+                        <div class="spinner-border text-primary mb-2" role="status"></div>
+                        <p class="mb-0">Import en cours...</p>
+                    </div>
+                    <div class="upload-dropzone-result d-none"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Mettre à jour Avancement OF</h5>
+                <div class="upload-dropzone" data-upload-url="?handler=UploadAvancement" id="dropzoneAvancement">
+                    <div class="upload-dropzone-content">
+                        <span class="upload-dropzone-icon">&#128194;</span>
+                        <p class="mb-1">Glissez le fichier <strong>Avancement des OF</strong> ici</p>
+                        <small class="text-muted">.xlsx uniquement</small>
+                        <input type="file" class="d-none" accept=".xlsx" id="fileInputAvancement"/>
+                    </div>
+                    <div class="upload-dropzone-progress d-none">
+                        <div class="spinner-border text-primary mb-2" role="status"></div>
+                        <p class="mb-0">Import en cours...</p>
+                    </div>
+                    <div class="upload-dropzone-result d-none"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script>
+        var statusLabels = @Html.Raw(Model.StatusLabelsJson);
+        var statusCounts = @Html.Raw(Model.StatusCountsJson);
+
+        if (statusLabels.length) {
+            new Chart(document.getElementById('statusChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: statusLabels,
+                    datasets: [{
+                        data: statusCounts,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' }
+                    }
+                }
+            });
+        }
+
+        var vendeurLabels = @Html.Raw(Model.VendeurLabelsJson);
+        var vendeurHours = @Html.Raw(Model.VendeurHoursJson);
+
+        if (vendeurLabels.length) {
+            new Chart(document.getElementById('vendeurChart'), {
+                type: 'bar',
+                data: {
+                    labels: vendeurLabels,
+                    datasets: [{
+                        label: 'Heures restantes',
+                        data: vendeurHours,
+                        backgroundColor: 'rgba(13, 110, 253, 0.6)',
+                        borderColor: 'rgba(13, 110, 253, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+    </script>
+}

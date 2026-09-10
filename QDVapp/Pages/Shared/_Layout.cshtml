@@ -1,0 +1,123 @@
+﻿<!DOCTYPE html>
+@using QDVapp.Models
+@using Microsoft.AspNetCore.Identity
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@{
+    bool? darkTheme = null;
+    if (SignInManager.IsSignedIn(User))
+    {
+        var appUser = await UserManager.GetUserAsync(User);
+        darkTheme = (appUser?.Theme == false); // Theme: false(0) = dark, true(1) = bright
+    }
+    var initialDark = darkTheme == true;
+}
+<html lang="en" data-bs-theme="@(initialDark ? "dark" : "light")">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>@ViewData["Title"] - QDVapp</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true"/>
+    <link rel="stylesheet" href="~/QDVapp.styles.css" asp-append-version="true"/>
+</head>
+<body>
+<header class="sticky-top qdv-topbar">
+    <nav class="navbar navbar-expand-sm navbar-toggleable-sm border-bottom box-shadow">
+        <div class="container">
+            <a class="navbar-brand qdv-brand" asp-area="" asp-page="/Index">QDVapp</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
+                    aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <ul class="navbar-nav flex-grow-1">
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" asp-area="" asp-page="/Index">Accueil</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" asp-area="" asp-page="/AtelierProjets">Atelier Projets</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" asp-area="" asp-page="/AvancementOF">Avancement OF</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" asp-area="" asp-page="/Gantt">Gantt</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" asp-area="" asp-page="/Rapports">Rapports</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-dark" asp-area="" asp-page="/Privacy">Privacy</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-sm btn-outline-secondary" id="darkModeToggle" title="Basculer mode sombre">
+                        <span id="darkModeIcon">&#9790;</span>
+                    </button>
+                </div>
+                <partial name="_LoginPartial"/>
+            </div>
+        </div>
+    </nav>
+</header>
+<div class="container">
+    <main role="main" class="pb-3">
+        @Html.AntiForgeryToken()
+        @RenderBody()
+    </main>
+</div>
+
+<footer class="border-top footer text-muted">
+    <div class="container">
+        &copy; 2026 - QDVapp - <a asp-area="" asp-page="/Privacy">Privacy</a>
+    </div>
+</footer>
+
+<script src="~/lib/jquery/dist/jquery.min.js"></script>
+<script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+<script src="~/lib/jquery-validation/dist/jquery.validate.min.js"></script>
+<script src="~/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js"></script>
+<script src="~/js/site.js" asp-append-version="true"></script>
+<script>
+    (function() {
+        var html = document.documentElement;
+
+        var isSignedIn = @(SignInManager.IsSignedIn(User) ? "true" : "false");
+
+        // Browser-persisted preference wins over the server default (which comes from the DB).
+        // This keeps the last-selected theme stable across refreshes in this browser.
+        var stored = localStorage.getItem('qdv-theme');
+        if (stored === 'dark') {
+            html.setAttribute('data-bs-theme', 'dark');
+        } else if (stored === 'bright') {
+            html.removeAttribute('data-bs-theme');
+        }
+
+        document.getElementById('darkModeToggle').addEventListener('click', function () {
+            var isDark = html.getAttribute('data-bs-theme') === 'dark';
+            var setDark = !isDark;
+            if (setDark) {
+                html.setAttribute('data-bs-theme', 'dark');
+            } else {
+                html.removeAttribute('data-bs-theme');
+            }
+
+            // Persist for this browser session regardless of auth state
+            localStorage.setItem('qdv-theme', setDark ? 'dark' : 'bright');
+
+            // Signed-in users: persist to the database (bright = 1, dark = 0)
+            if (isSignedIn) {
+                fetch('/api/theme', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bright: setDark ? false : true })
+                }).catch(function () {});
+            }
+        });
+    })();
+</script>
+
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

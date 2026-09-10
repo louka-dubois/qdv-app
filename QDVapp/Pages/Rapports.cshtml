@@ -1,0 +1,302 @@
+@page
+@model RapportsModel
+@{
+    ViewData["Title"] = "Rapports";
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <small class="text-muted fw-semibold">Période</small>
+                <div class="btn-group d-block" role="group" aria-label="Période">
+                    <a class="btn btn-sm @(Model.Period == "day" ? "btn-primary" : "btn-outline-primary")" asp-page="/Rapports" asp-route-period="day" asp-route-vendeur="@Model.Vendeur">Jour</a>
+                    <a class="btn btn-sm @(Model.Period == "week" ? "btn-primary" : "btn-outline-primary")" asp-page="/Rapports" asp-route-period="week" asp-route-vendeur="@Model.Vendeur">Semaine</a>
+                    <a class="btn btn-sm @(Model.Period == "month" ? "btn-primary" : "btn-outline-primary")" asp-page="/Rapports" asp-route-period="month" asp-route-vendeur="@Model.Vendeur">Mois</a>
+                    <button class="btn btn-sm @(Model.Period == "custom" ? "btn-primary" : "btn-outline-primary")" type="submit" name="period" value="custom">Personnalisé</button>
+                </div>
+            </div>
+            <div class="col-auto">
+                <small class="text-muted fw-semibold">Du</small>
+                <input type="date" class="form-control form-control-sm" name="start" value="@Model.PeriodLabelDate(Model.RangeStart)" style="width:150px"/>
+            </div>
+            <div class="col-auto">
+                <small class="text-muted fw-semibold">Au</small>
+                <input type="date" class="form-control form-control-sm" name="end" value="@Model.PeriodLabelDate(Model.RangeEnd)" style="width:150px"/>
+            </div>
+            <div class="col-auto">
+                <small class="text-muted fw-semibold">Vendeur</small>
+                <select class="form-select form-select-sm" name="vendeur" style="min-width:160px">
+                    <option value="">Tous</option>
+                    @foreach (var v in Model.Vendeurs)
+                    {
+                        <option value="@v" selected="@(string.Equals(Model.Vendeur, v, StringComparison.OrdinalIgnoreCase))">@v</option>
+                    }
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h4 class="mb-0">Rapport — @Model.PeriodLabel</h4>
+        <small class="text-muted">
+            @(string.IsNullOrEmpty(Model.Vendeur) ? "Tous les vendeurs" : $"Vendeur : {Model.Vendeur}")
+            · @Model.Projets.Count projet(s) · @Model.Ordres.Count OF
+        </small>
+    </div>
+    <div class="btn-group" role="group" aria-label="Export">
+        <a class="btn btn-success btn-sm" asp-page="/Rapports" asp-page-handler="Export"
+           asp-route-period="@Model.Period"
+           asp-route-start="@Model.PeriodLabelDate(Model.RangeStart)"
+           asp-route-end="@Model.PeriodLabelDate(Model.RangeEnd)"
+           asp-route-vendeur="@Model.Vendeur">
+            Exporter Excel
+        </a>
+        <a class="btn btn-danger btn-sm" asp-page="/Rapports" asp-page-handler="ExportPdf"
+           asp-route-period="@Model.Period"
+           asp-route-start="@Model.PeriodLabelDate(Model.RangeStart)"
+           asp-route-end="@Model.PeriodLabelDate(Model.RangeEnd)"
+           asp-route-vendeur="@Model.Vendeur">
+            Exporter PDF
+        </a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-sm-6">
+        <div class="card text-bg-primary h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.TotalProjets</div>
+                <div class="small opacity-75">Projets de la période</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card text-bg-warning h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.ProjetsEnRetard</div>
+                <div class="small opacity-75">Projets en retard</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card text-bg-info h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.HeuresRestantes.ToString("0") h</div>
+                <div class="small opacity-75">Heures restantes</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card text-bg-danger h-100">
+            <div class="card-body">
+                <div class="fs-1 fw-bold">@Model.HeuresRestantesEnRetard.ToString("0") h</div>
+                <div class="small opacity-75">Heures en retard</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Répartition par statut (projets)</h5>
+                <div style="height:300px; display:flex; align-items:center; justify-content:center; position:relative"><canvas id="statusChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Heures restantes par vendeur</h5>
+                <div style="height:300px; display:flex; align-items:center; justify-content:center; position:relative"><canvas id="vendeurChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Heures par poste (OF)</h5>
+                <div style="height:300px; display:flex; align-items:center; justify-content:center; position:relative"><canvas id="stationChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title mb-0">Synthèse OF — @Model.TotalOfs OF sur la période</h5>
+        <div class="row g-3 mt-1">
+            <div class="col-md-4">
+                <canvas id="ofStatusChart" height="120"></canvas>
+            </div>
+            <div class="col-md-4 d-flex align-items-center">
+                <div>
+                    <div class="fs-3 fw-bold">@Model.TotalHeuresStations.ToString("0.##") h</div>
+                    <div class="small text-muted">Total heures postes sur la période</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Projets de la période (@Model.Projets.Count)</div>
+            <div class="table-responsive" style="max-height:480px; overflow-y:auto;">
+                <table class="table table-sm table-bordered table-striped mb-0 align-middle">
+                    <thead class="table-dark sticky-top-report">
+                        <tr>
+                            <th>Statut</th>
+                            <th>No Projet</th>
+                            <th>Réf OF</th>
+                            <th>Vendeur</th>
+                            <th>Date requise</th>
+                            <th class="text-end">Restant (h)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in Model.Projets)
+                        {
+                            <tr>
+                                <td><span class="badge @GetStatusBadge(p.Statut)">@(p.Statut ?? "-")</span></td>
+                                <td class="fw-semibold">@(p.NoCmd ?? "-")</td>
+                                <td>@(p.RefOF ?? "-")</td>
+                                <td>@(p.Vendeur ?? "-")</td>
+                                <td>@(p.DateRequise?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                <td class="text-end">@FormatRestant(p.Restant)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">OF de la période (@Model.Ordres.Count)</div>
+            <div class="table-responsive" style="max-height:480px; overflow-y:auto;">
+                <table class="table table-sm table-bordered table-striped mb-0 align-middle">
+                    <thead class="table-dark sticky-top-report">
+                        <tr>
+                            <th>Projet</th>
+                            <th>Réf OF</th>
+                            <th>Statut</th>
+                            <th>Requis final</th>
+                            <th class="text-end">Heures postes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var o in Model.Ordres)
+                        {
+                            <tr>
+                                <td>@(o.Projet ?? "-")</td>
+                                <td>@(o.RefOF ?? "-")</td>
+                                <td><span class="badge @GetStatusBadgeClass(o.StatutOF)">@(o.StatutOF ?? "-")</span></td>
+                                <td>@(o.RequisFinal?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                <td class="text-end">@SumStationHours(o).ToString("0.##")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    string GetStatusBadge(string? status)
+    {
+        if (string.IsNullOrEmpty(status)) return "bg-secondary";
+        return status switch
+        {
+            string s when s.StartsWith("V-") => "bg-danger",
+            string s when s.StartsWith("W-") => "bg-warning text-dark",
+            string s when s.StartsWith("X-") => "bg-info text-dark",
+            string s when s.StartsWith("Y-") => "bg-primary",
+            _ => "bg-secondary"
+        };
+    }
+
+    string GetStatusBadgeClass(string? status)
+    {
+        return status?.ToLower() switch
+        {
+            "lancé" or "lancée" => "bg-success",
+            "en cours" => "bg-warning text-dark",
+            "terminé" or "terminée" => "bg-secondary",
+            _ => "bg-info"
+        };
+    }
+
+    string FormatRestant(double? val)
+    {
+        return val.HasValue ? val.Value.ToString("0.##") : "-";
+    }
+
+    double SumStationHours(AvancementOF of)
+    {
+        double total = 0;
+        foreach (var (_, prop) in StationColumns.Stations)
+        {
+            var val = of.GetType().GetProperty(prop)?.GetValue(of)?.ToString();
+            if (double.TryParse((val ?? "").Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+                total += num;
+        }
+        return total;
+    }
+}
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script>
+        var statusLabels = @Html.Raw(Model.StatusLabelsJson);
+        var statusCounts = @Html.Raw(Model.StatusCountsJson);
+        if (statusLabels.length) {
+            new Chart(document.getElementById('statusChart'), {
+                type: 'doughnut',
+                data: { labels: statusLabels, datasets: [{ data: statusCounts, borderWidth: 1 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+            });
+        }
+
+        var vendeurLabels = @Html.Raw(Model.VendeurLabelsJson);
+        var vendeurHours = @Html.Raw(Model.VendeurHoursJson);
+        if (vendeurLabels.length) {
+            new Chart(document.getElementById('vendeurChart'), {
+                type: 'bar',
+                data: { labels: vendeurLabels, datasets: [{ label: 'Heures restantes', data: vendeurHours, backgroundColor: 'rgba(13,110,253,0.6)', borderColor: 'rgba(13,110,253,1)', borderWidth: 1 }] },
+                options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+            });
+        }
+
+        var stationLabels = @Html.Raw(Model.StationLabelsJson);
+        var stationHours = @Html.Raw(Model.StationHoursJson);
+        if (stationLabels.length) {
+            new Chart(document.getElementById('stationChart'), {
+                type: 'bar',
+                data: { labels: stationLabels, datasets: [{ label: 'Heures', data: stationHours, backgroundColor: 'rgba(25,135,84,0.6)' }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        var ofStatusLabels = @Html.Raw(Model.OfStatusLabelsJson);
+        var ofStatusCounts = @Html.Raw(Model.OfStatusCountsJson);
+        if (ofStatusLabels.length) {
+            new Chart(document.getElementById('ofStatusChart'), {
+                type: 'doughnut',
+                data: { labels: ofStatusLabels, datasets: [{ data: ofStatusCounts, borderWidth: 1 }] },
+                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+            });
+        }
+    </script>
+}

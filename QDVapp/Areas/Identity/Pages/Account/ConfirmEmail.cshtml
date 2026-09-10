@@ -1,0 +1,13 @@
+@page
+@model QDVapp.Areas.Identity.Pages.Account.ConfirmEmailModel
+@{
+    ViewData["Title"] = "Confirmer le courriel";
+}
+
+<h2>@ViewData["Title"]</h2>
+
+<div class="alert @((Model.StatusMessage.Contains("erreur") ? "alert-danger" : "alert-success"))" role="alert">
+    @Model.StatusMessage
+</div>
+
+<p><a asp-area="Identity" asp-page="/Account/Login">Cliquez ici pour vous connecter</a></p>

@@ -1,0 +1,15 @@
+@model QDVapp.Services.ExcelUploadService.UploadReport?
+
+@if (Model is not null && Model.HasIssues)
+{
+    <div class="alert alert-warning alert-dismissible fade show">
+        <strong>Attention&nbsp;:</strong> le fichier a été enregistré, mais certains onglets (tables) ne sont pas conformes.
+        <ul class="mb-0 mt-1">
+            @foreach (var issue in Model.Issues)
+            {
+                <li><strong>« @issue.Sheet »</strong> — @issue.Reason</li>
+            }
+        </ul>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}

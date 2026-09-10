@@ -1,0 +1,833 @@
+@page
+@model AvancementOFModel
+@using QDVapp.Models
+@using System.Reflection
+@using System.Text.Encodings.Web
+@using QDVapp.Services
+@{
+    ViewData["Title"] = "Avancement des OF";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Avancement des Ordres de Fabrication</h1>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-primary fs-6">@Model.TotalCount OF(s)</span>
+        <a class="btn btn-sm btn-outline-primary" asp-page="/AvancementOF" asp-page-handler="ExportCorrected">Exporter corrigé</a>
+        <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#createOFModal" id="createOFBtn">+ Nouvel OF</button>
+    </div>
+</div>
+
+<div class="upload-dropzone mb-3" data-upload-url="?handler=UploadAvancement" id="dropzoneAvancement">
+    <div class="upload-dropzone-content">
+        <span class="upload-dropzone-icon">&#128194;</span>
+        <p class="mb-1">Glissez le fichier Excel <strong>Avancement des OF</strong> ici</p>
+        <small class="text-muted">ou cliquez pour sélectionner un fichier .xlsx</small>
+        <input type="file" class="d-none" accept=".xlsx" id="fileInputAvancement"/>
+    </div>
+    <div class="upload-dropzone-progress d-none">
+        <div class="spinner-border text-primary mb-2" role="status"></div>
+        <p class="mb-0">Import en cours...</p>
+    </div>
+    <div class="upload-dropzone-result d-none"></div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.SuccessMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show">
+        @Model.SuccessMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<partial name="_UploadReportAlert" model="Model.UploadReport"/>
+
+@if (Model.UploadReport?.Issues.Any(i => string.Equals(i.Sheet, "Liste des heures à faire", StringComparison.OrdinalIgnoreCase)) == true)
+{
+    <div class="alert alert-danger mb-3">
+        <strong>Onglet principal non conforme&nbsp;:</strong> le tableau « Liste des heures à faire » ne s'affiche pas correctement
+        (l'onglet est vide ou manquant). Vérifiez le fichier source.
+    </div>
+}
+
+@if (Model.SkippedRows.Count > 0)
+{
+    <div class="alert alert-danger mb-3">
+        <strong>@Model.SkippedRows.Count rangée(s) ignorée(s) :</strong> certaines lignes n'ont pas pu être chargées et
+        n'apparaissent donc pas ci-dessous.
+        <ul class="mb-0 mt-1">
+            @foreach (var s in Model.SkippedRows)
+            {
+                <li>Ligne @s.Row — @s.Reason</li>
+            }
+        </ul>
+    </div>
+}
+
+@if (Model.Ordres.Count == 0)
+{
+    <div class="alert alert-info">Aucune donnée trouvée.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm align-middle @(Model.UploadReport?.Issues.Any(i => string.Equals(i.Sheet, "Liste des heures à faire", StringComparison.OrdinalIgnoreCase)) == true ? "table-non-compliant" : null)" id="ofTable" data-expand="@Model.ExpandRef">
+            <thead class="table-dark">
+                <tr>
+                    <th class="col-expand" rowspan="2"></th>
+                    <th rowspan="2">Projet</th>
+                    <th rowspan="2">Réf OF</th>
+                    <th rowspan="2">Statut</th>
+                    <th rowspan="2">Priorité</th>
+                    <th rowspan="2">Requis Fab</th>
+                    <th rowspan="2">Requis Final</th>
+                    <th colspan="21" class="col-extra">Postes de travail (heures)</th>
+                    <th rowspan="2" class="col-extra">Description</th>
+                    <th rowspan="2" class="col-extra">Inspection</th>
+                    <th rowspan="2" class="col-extra">Commentaire OF</th>
+                </tr>
+                <tr>
+                    @foreach (var (label, _) in StationColumns.Stations)
+                    {
+                        <th class="station-th col-extra">@label</th>
+                    }
+                    <th class="col-extra"></th>
+                    <th class="col-extra"></th>
+                    <th class="col-extra"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var of in Model.Ordres)
+                {
+                    var rowId = of.RefOF ?? of.Id ?? Guid.NewGuid().ToString();
+                    var ofHasErrors = of.BadValues.Count > 0;
+                    <tr class="main-row @(ofHasErrors ? "row-error" : "")" data-of-id="@rowId" data-id="@of.Id" data-of-manuel="@of.Manuel.ToString().ToLowerInvariant()" data-projet="@of.Projet" data-refof="@of.RefOF" data-statutof="@of.StatutOF" data-priorite="@of.Priorite" data-requisfab="@(of.RequisFab?.ToString("yyyy-MM-dd"))" data-requisfinal="@(of.RequisFinal?.ToString("yyyy-MM-dd"))" data-descriptionarticle="@of.DescriptionArticle" data-commentaireinspection="@of.CommentaireInspection" data-commentaireof="@of.CommentaireOF" @Html.Raw(StationDataAttrs(of))>
+                        <td class="col-expand text-center expand-toggle">
+                            @if (ofHasErrors)
+                            {
+                                <span class="row-error-icon" title="Valeurs invalides">&#9888;</span>
+                            }
+                            <span class="expand-icon">&#9654;</span>
+                        </td>
+                        <td class="text-nowrap">
+                            <div class="d-flex align-items-center justify-content-between gap-2">
+                                <span class="text-nowrap">
+                                    @if (!string.IsNullOrWhiteSpace(of.Projet))
+                                    {
+                                        <a class="projet-link" href="@Url.Page("/AtelierProjets", new { @ref = of.Projet })" title="Voir le projet correspondant">@Html.Raw(EditCell(of, "Projet", of.Projet ?? "-"))</a>
+                                    }
+                                    else
+                                    {
+                                        @Html.Raw(EditCell(of, "Projet", "-"))
+                                    }
+                                </span>
+                                @if (of.Manuel)
+                                {
+                                    <span class="d-flex align-items-center gap-1 text-nowrap">
+                                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-manual-of" title="Modifier cet OF"
+                                                data-bs-toggle="modal" data-bs-target="#createOFModal">&#9998;</button>
+                                        <form method="post" asp-page-handler="Delete" class="d-inline">
+                                            <input type="hidden" name="id" value="@of.Id"/>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Supprimer cet OF" onclick="return confirm('Supprimer cet OF manuel ?');">&#215;</button>
+                                        </form>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 update-of" title="Modifier cet OF (correction)" data-of-id="@rowId">&#9998;</button>
+                                }
+                            </div>
+                        </td>
+                        <td class="fw-semibold">@Html.Raw(EditCell(of, "RefOF", of.RefOF ?? "-"))</td>
+                        <td>
+                            <span class="badge @GetStatusBadgeClass(of.StatutOF)">@Html.Raw(EditCell(of, "StatutOF", of.StatutOF ?? "-"))</span>
+                            @if (of.Manuel)
+                            {
+                                <span class="badge bg-success ms-1">Manuel</span>
+                            }
+                        </td>
+                        <td class="text-center">@Html.Raw(Cell(of, "Priorite", of.Priorite?.ToString()))</td>
+                        <td class="text-nowrap small">@Html.Raw(Cell(of, "RequisFab", FormatDate(of.RequisFab)))</td>
+                        <td class="text-nowrap small">@Html.Raw(Cell(of, "RequisFinal", FormatDate(of.RequisFinal)))</td>
+                        @foreach (var (label, prop) in StationColumns.Stations)
+                        {
+                            var val = GetStationValue(of, prop);
+                            <td class="small col-extra @GetStationCellClass(val)" data-station="@label">@Html.Raw(EditCell(of, prop, FormatStation(val)))</td>
+                        }
+                        <td class="col-extra" style="max-width: 220px; white-space: normal;">
+                            @Html.Raw(EditCell(of, "DescriptionArticle", Truncate(of.DescriptionArticle, 60) ?? "-"))
+                        </td>
+                        <td class="col-extra" style="max-width: 180px; white-space: normal; font-size: 0.8rem;">
+                            @Html.Raw(EditCell(of, "CommentaireInspection", Truncate(of.CommentaireInspection, 50) ?? "-"))
+                        </td>
+                        <td class="col-extra" style="max-width: 180px; white-space: normal; font-size: 0.8rem;">
+                            @Html.Raw(EditCell(of, "CommentaireOF", Truncate(of.CommentaireOF, 50) ?? "-"))
+                        </td>
+                    </tr>
+                    <tr class="detail-row" data-of-id="@rowId">
+                        <td colspan="7">
+                            <div class="detail-inner">
+                                <div class="mb-2">
+                                    <strong>Description :</strong>
+                                    <span>@Html.Raw(EditCell(of, "DescriptionArticle", of.DescriptionArticle ?? "-"))</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Postes de travail (heures) :</strong>
+                                    <div class="stations-grid">
+                                        @foreach (var (label, prop) in StationColumns.Stations)
+                                        {
+                                            var val = GetStationValue(of, prop);
+                                            <div class="station-item @GetStationCellClass(val)" data-station="@label">
+                                                <span class="station-label">@label</span>
+                                                <span class="station-value">@Html.Raw(EditCell(of, prop, FormatStation(val)))</span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-1">
+                                        <strong>Commentaire Inspection :</strong>
+                                        <div>@Html.Raw(EditCell(of, "CommentaireInspection", of.CommentaireInspection ?? "-"))</div>
+                                    </div>
+                                    <div class="col-md-6 mb-1">
+                                        <strong>Commentaire OF :</strong>
+                                        <div>@Html.Raw(EditCell(of, "CommentaireOF", of.CommentaireOF ?? "-"))</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-2 mb-3" id="paginationControls">
+        <div class="d-flex align-items-center gap-2">
+            <select class="form-select form-select-sm" id="pageSizeSelect" style="width: auto;">
+                <option value="25">25 / page</option>
+                <option value="50" selected>50 / page</option>
+                <option value="100">100 / page</option>
+                <option value="9999">Tout</option>
+            </select>
+            <span class="text-muted small" id="paginationInfo"></span>
+        </div>
+        <div class="d-flex align-items-center gap-1">
+            <button class="btn btn-sm btn-outline-secondary" id="prevPage" disabled>&laquo; Préc</button>
+            <span class="mx-2 small fw-semibold" id="pageIndicator"></span>
+            <button class="btn btn-sm btn-outline-secondary" id="nextPage" disabled>Suiv &raquo;</button>
+        </div>
+    </div>
+
+    <div id="sumTooltip" class="sum-tooltip" style="display:none;">
+        <div class="sum-tooltip-header"></div>
+        <div class="sum-tooltip-body"></div>
+    </div>
+}
+
+<div class="modal fade" id="createOFModal" tabindex="-1" aria-labelledby="createOFModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="Create" id="ofForm">
+                <input type="hidden" name="Input.Id" id="Input_Id"/>
+                <input type="hidden" id="OfIsCorrection" name="OfIsCorrection" value="false"/>
+                <input type="hidden" id="OfProjectKey" name="OfProjectKey" value=""/>
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createOFModalLabel">Nouvel OF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <h6 class="text-primary fw-bold mb-3">Informations OF</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <label class="form-label" for="Input_Projet">Projet</label>
+                            <input class="form-control" id="Input_Projet" name="Input.Projet"/>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="Input_RefOF">Réf OF</label>
+                            <input class="form-control" id="Input_RefOF" name="Input.RefOF"/>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="Input_StatutOF">Statut</label>
+                            <select class="form-select" id="Input_StatutOF" name="Input.StatutOF">
+                                <option value="">—</option>
+                                <option value="Lancé">Lancé</option>
+                                <option value="En cours">En cours</option>
+                                <option value="Terminé">Terminé</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label" for="Input_DescriptionArticle">Description article</label>
+                            <input class="form-control" id="Input_DescriptionArticle" name="Input.DescriptionArticle"/>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" for="Input_Priorite">Priorité</label>
+                            <input type="number" step="1" min="0" class="form-control" id="Input_Priorite" name="Input.Priorite"/>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="Input_RequisFab">Requis Fab</label>
+                            <input type="date" class="form-control" id="Input_RequisFab" name="Input.RequisFab"/>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="Input_RequisFinal">Requis Final</label>
+                            <input type="date" class="form-control" id="Input_RequisFinal" name="Input.RequisFinal"/>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="Input_CommentaireInspection">Commentaire Inspection</label>
+                            <textarea class="form-control" id="Input_CommentaireInspection" name="Input.CommentaireInspection" rows="2"></textarea>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label" for="Input_CommentaireOF">Commentaire OF</label>
+                            <textarea class="form-control" id="Input_CommentaireOF" name="Input.CommentaireOF" rows="2"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="accordion mb-2" id="stationsAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="stationsHeading">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#stationsCollapse" aria-expanded="false" aria-controls="stationsCollapse">
+                                    Postes de travail (heures)
+                                </button>
+                            </h2>
+                            <div id="stationsCollapse" class="accordion-collapse collapse" aria-labelledby="stationsHeading" data-bs-parent="#stationsAccordion">
+                                <div class="accordion-body">
+                                    <div class="row g-3">
+                                        @foreach (var (label, prop) in StationColumns.Stations)
+                                        {
+                                            <div class="col-6 col-md-4 col-lg-3">
+                                                <label class="form-label small" for="Input_@prop">@label</label>
+                                                <input class="form-control form-control-sm" id="Input_@prop" name="Input.@prop"/>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success" id="ofModalSubmit">Ajouter l'OF</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const table = document.getElementById('ofTable');
+            const tooltip = document.getElementById('sumTooltip');
+            var currentPage = 1;
+            var pageSize = 50;
+
+            document.querySelectorAll('.nav-link-page').forEach(function (a) {
+                a.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                });
+            });
+
+            function collapseAll() {
+                table.querySelectorAll('.detail-row.visible').forEach(function (r) {
+                    r.classList.remove('visible');
+                });
+                table.querySelectorAll('.expand-icon').forEach(function (i) {
+                    i.innerHTML = '&#9654;';
+                });
+            }
+
+            function applyPagination() {
+                var allMainRows = table.querySelectorAll('.main-row');
+                var total = allMainRows.length;
+                var totalPages = pageSize >= total ? 1 : Math.ceil(total / pageSize);
+                if (currentPage > totalPages) currentPage = totalPages;
+                if (currentPage < 1) currentPage = 1;
+
+                var start = (currentPage - 1) * pageSize;
+                var end = start + pageSize;
+
+                allMainRows.forEach(function (row) { row.style.display = 'none'; });
+                table.querySelectorAll('.detail-row').forEach(function (row) { row.style.display = 'none'; row.classList.remove('visible'); });
+                table.querySelectorAll('.expand-icon').forEach(function (i) { i.innerHTML = '&#9654;'; });
+
+                allMainRows.forEach(function (row, idx) {
+                    if (idx >= start && idx < end) {
+                        row.style.display = '';
+                        var id = row.dataset.ofId;
+                        var detail = table.querySelector('.detail-row[data-of-id="' + id + '"]');
+                        if (detail) detail.style.display = '';
+                    }
+                });
+
+                var from = total === 0 ? 0 : start + 1;
+                var to = Math.min(end, total);
+                document.getElementById('paginationInfo').textContent = from + '–' + to + ' sur ' + total;
+                document.getElementById('pageIndicator').textContent = 'Page ' + currentPage + ' / ' + totalPages;
+                document.getElementById('prevPage').disabled = currentPage <= 1;
+                document.getElementById('nextPage').disabled = currentPage >= totalPages;
+
+                var controls = document.getElementById('paginationControls');
+                controls.style.display = total === 0 ? 'none' : '';
+            }
+
+            document.getElementById('prevPage').addEventListener('click', function () {
+                currentPage--;
+                applyPagination();
+            });
+            document.getElementById('nextPage').addEventListener('click', function () {
+                currentPage++;
+                applyPagination();
+            });
+            document.getElementById('pageSizeSelect').addEventListener('change', function () {
+                pageSize = parseInt(this.value, 10);
+                currentPage = 1;
+                applyPagination();
+            });
+
+            function parseStationValue(text) {
+                var t = (text || '').trim();
+                if (t === '' || t === '-' || t === 'N/A' || t === 'Terminée') return NaN;
+                var num = parseFloat(t.replace(',', '.'));
+                return isNaN(num) ? NaN : num;
+            }
+
+            function showSum(e, stationName) {
+                var total = 0;
+                var count = 0;
+                var escaped = CSS.escape(stationName);
+                document.querySelectorAll('#ofTable td[data-station="' + escaped + '"]').forEach(function (el) {
+                    var num = parseStationValue(el.textContent);
+                    if (!isNaN(num)) { total += num; count++; }
+                });
+
+                tooltip.querySelector('.sum-tooltip-header').textContent = stationName;
+                tooltip.querySelector('.sum-tooltip-body').textContent = 'Total: ' + Number(total.toFixed(2)) + ' h  (' + count + ' OFs)';
+
+                var rect = e.target.getBoundingClientRect();
+                tooltip.style.left = (rect.left + window.scrollX) + 'px';
+                tooltip.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+                tooltip.style.display = 'block';
+            }
+
+            function hideSum() { tooltip.style.display = 'none'; }
+
+            function getStationName(target) {
+                if (target.hasAttribute('data-station')) return target.getAttribute('data-station');
+                var p = target.closest('[data-station]');
+                return p ? p.getAttribute('data-station') : null;
+            }
+
+            table.addEventListener('click', function (e) {
+                var stationName = getStationName(e.target);
+                if (stationName) {
+                    hideSum();
+                    showSum(e, stationName);
+                    e.stopPropagation();
+                    return;
+                }
+
+                hideSum();
+
+                if (e.target.closest('form')) return;
+                if (e.target.closest('.edit-manual-of')) return;
+                e.stopPropagation();
+
+                var row = e.target.closest('.main-row');
+                if (!row) return;
+
+                var id = row.dataset.ofId;
+                var detail = table.querySelector('.detail-row[data-of-id="' + id + '"]');
+                var icon = row.querySelector('.expand-icon');
+                if (!detail) return;
+
+                var wasVisible = detail.classList.contains('visible');
+                collapseAll();
+                if (!wasVisible) {
+                    detail.classList.add('visible');
+                    if (icon) icon.innerHTML = '&#9660;';
+                }
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('#sumTooltip') && !getStationName(e.target)) {
+                    hideSum();
+                }
+            });
+
+            var expandRef = table.getAttribute('data-expand');
+            var targetRow = expandRef ? table.querySelector('.main-row[data-of-id="' + CSS.escape(expandRef) + '"]') : null;
+            if (targetRow) {
+                var allMainRows = Array.from(table.querySelectorAll('.main-row'));
+                var idx = allMainRows.indexOf(targetRow);
+                if (idx >= 0) currentPage = Math.floor(idx / pageSize) + 1;
+            }
+
+            applyPagination();
+
+            if (targetRow) {
+                var detail = table.querySelector('.detail-row[data-of-id="' + CSS.escape(expandRef) + '"]');
+                var icon = targetRow.querySelector('.expand-icon');
+                if (detail) {
+                    detail.classList.add('visible');
+                    if (icon) icon.innerHTML = '&#9660;';
+                    setTimeout(function () {
+                        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 100);
+                }
+            }
+        })();
+    </script>
+
+    <script>
+        (function () {
+            var csrf = document.querySelector('input[name="__RequestVerificationToken"]');
+            var csrfToken = csrf ? csrf.value : '';
+            var activeInput = null;
+
+            function rawOf(span) {
+                if (span.dataset.editValue !== undefined) return span.dataset.editValue;
+                return span.textContent.replace(/^\s*⚠\s*/, '');
+            }
+
+            function rawOf(span) {
+                if (span.dataset.editValue !== undefined) return span.dataset.editValue;
+                return span.textContent.replace(/^\s*⚠\s*/, '');
+            }
+
+            function rowIdOf(el) {
+                var row = el.closest('.main-row, .detail-row');
+                return row ? row.dataset.ofId : null;
+            }
+
+            function reloadAt(rowId) {
+                if (rowId) { location.href = '?ref=' + encodeURIComponent(rowId); }
+                else { location.reload(); }
+            }
+
+            function beginEdit(span) {
+                var field = span.dataset.editField;
+                var key = span.dataset.editKey;
+                var rowId = rowIdOf(span);
+                var current = rawOf(span);
+
+                var rect = span.getBoundingClientRect();
+                var input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-control bad-edit-float';
+                input.value = current;
+                input.style.left = rect.left + 'px';
+                input.style.top = rect.top + 'px';
+                input.style.width = Math.max(rect.width, 120) + 'px';
+                input.style.height = Math.max(rect.height, 28) + 'px';
+                document.body.appendChild(input);
+                activeInput = input;
+                input.focus();
+                input.select();
+
+                function cleanup() {
+                    if (activeInput) { activeInput.remove(); activeInput = null; }
+                }
+
+                function finish(save) {
+                    var val = input.value;
+                    cleanup();
+                    if (save && val !== current) {
+                        saveCorrection(key, field, val, rowId);
+                    } else {
+                        reloadAt(rowId);
+                    }
+                }
+
+                input.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+                    else if (e.key === 'Escape') { e.preventDefault(); cleanup(); reloadAt(rowId); }
+                });
+                input.addEventListener('blur', function () { finish(false); });
+                window.addEventListener('resize', cleanup, { once: true });
+            }
+
+            function saveCorrection(key, field, val, rowId) {
+                fetch('?handler=FixValue', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': csrfToken },
+                    body: JSON.stringify({ projet: key, field: field, value: val })
+                }).then(function (r) { return r.json(); }).then(function (json) {
+                    if (json.success) { reloadAt(rowId); }
+                    else { alert(json.error || 'Valeur invalide.'); reloadAt(rowId); }
+                }).catch(function () { reloadAt(rowId); });
+            }
+
+            function resetCorrection(key, field, btn) {
+                var rowId = rowIdOf(btn);
+                fetch('?handler=ResetCorrection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': csrfToken },
+                    body: JSON.stringify({ projet: key, field: field })
+                }).then(function (r) { return r.json(); }).then(function (json) {
+                    reloadAt(rowId);
+                }).catch(function () { reloadAt(rowId); });
+            }
+
+            function bindResets() {
+                document.querySelectorAll('.reset-corr').forEach(function (btn) {
+                    if (btn.hasAttribute('data-reset-bound')) return;
+                    btn.setAttribute('data-reset-bound', '1');
+                    btn.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        resetCorrection(btn.dataset.resetKey, btn.dataset.resetField, btn);
+                    });
+                });
+            }
+
+            function install() {
+                document.querySelectorAll('.edit-cell').forEach(function (span) {
+                    if (span.hasAttribute('data-edit-bound')) return;
+                    if (span.dataset.editField === 'Projet') return;
+                    span.setAttribute('data-edit-bound', '1');
+                    span.addEventListener('click', function (e) { e.stopPropagation(); beginEdit(span); });
+                });
+                bindResets();
+            }
+
+            install();
+            document.querySelectorAll('#ofTable').forEach(function (t) {
+                new MutationObserver(install).observe(t, { childList: true, subtree: true });
+            });
+        })();
+    </script>
+
+    <script>
+        (function () {
+            var modalEl = document.getElementById('createOFModal');
+            var form = document.getElementById('ofForm');
+            var editTarget = null;
+            var currentCorrection = null;
+            var csrf = document.querySelector('input[name="__RequestVerificationToken"]');
+            var csrfToken = csrf ? csrf.value : '';
+
+            function reloadAt(rowId) {
+                if (rowId) location.href = '?ref=' + encodeURIComponent(rowId);
+                else location.reload();
+            }
+            window.reloadAtStateOf = reloadAt;
+
+            function rowOf(btn) {
+                return btn.closest('.main-row');
+            }
+
+            document.querySelectorAll('.update-of').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    editTarget = { row: rowOf(btn), isCorrection: true, originalKey: (rowOf(btn).dataset.projet || ''), originals: {} };
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                });
+            });
+
+            function prefillFromRow(d) {
+                var statutSel = form.querySelector('#Input_StatutOF');
+                form.querySelectorAll('input[id^="Input_"], textarea[id^="Input_"], select[id^="Input_"]').forEach(function (inp) {
+                    if (inp.id === 'Input_Id') return;
+                    var key = inp.id.replace(/^Input_/, '').toLowerCase();
+                    var val = d[key];
+                    if (val !== undefined && val !== null) inp.value = val;
+                });
+                if (d.statutof && !Array.from(statutSel.options).some(function (o) { return o.value === d.statutof; })) {
+                    var opt = document.createElement('option');
+                    opt.value = d.statutof;
+                    opt.textContent = d.statutof;
+                    statutSel.appendChild(opt);
+                }
+                statutSel.value = d.statutof || '';
+            }
+
+            if (modalEl) {
+                modalEl.addEventListener('show.bs.modal', function (e) {
+                    var trigger = e.relatedTarget;
+                    if (trigger) {
+                        if (trigger.classList && trigger.classList.contains('edit-manual-of')) {
+                            editTarget = { row: rowOf(trigger), isCorrection: false };
+                        } else {
+                            editTarget = null;
+                        }
+                    }
+                    form.reset();
+                    document.getElementById('Input_Id').value = '';
+                    modalEl.querySelector('.modal-title').textContent = 'Nouvel OF';
+                    document.getElementById('ofModalSubmit').textContent = "Ajouter l'OF";
+                    document.getElementById('OfIsCorrection').value = 'false';
+                    document.getElementById('OfProjectKey').value = '';
+                    currentCorrection = null;
+
+                    if (editTarget) {
+                        var d = editTarget.row.dataset;
+
+                        if (editTarget.isCorrection) {
+                            editTarget.originalKey = d.projet || '';
+                            editTarget.originals = {};
+                            form.querySelectorAll('input[id^="Input_"], textarea[id^="Input_"], select[id^="Input_"]').forEach(function (inp) {
+                                if (inp.id === 'Input_Id') return;
+                                var key = inp.id.replace(/^Input_/, '').toLowerCase();
+                                editTarget.originals[inp.id] = (d[key] !== undefined && d[key] !== null) ? d[key] : '';
+                            });
+                            prefillFromRow(d);
+                            document.getElementById('OfIsCorrection').value = 'true';
+                            document.getElementById('OfProjectKey').value = editTarget.originalKey;
+                            currentCorrection = editTarget;
+                            modalEl.querySelector('.modal-title').textContent = "Modifier l'OF";
+                            document.getElementById('ofModalSubmit').textContent = 'Enregistrer la correction';
+                        } else {
+                            prefillFromRow(d);
+                            document.getElementById('Input_Id').value = d.id || '';
+                            modalEl.querySelector('.modal-title').textContent = "Modifier l'OF";
+                            document.getElementById('ofModalSubmit').textContent = 'Enregistrer';
+                        }
+                    }
+                });
+            }
+
+            var correctionFields = ['Projet', 'RefOF', 'StatutOF', 'DescriptionArticle', 'Priorite', 'RequisFab', 'RequisFinal', 'CommentaireInspection', 'CommentaireOF',
+                'Scie', 'RobotPlasma', 'LaserTube', 'TablePlasma', 'TableLaser', 'Pliage', 'Roulage', 'Machinage', 'STMachine', 'Montage', 'TuyauterieMontage', 'Soudage',
+                'TuyauterieSoudage', 'SoudageRobot', 'STMontageSoudage', 'Inspection', 'STInspection', 'Reparation', 'Peinture', 'STPeinture', 'Emballage'];
+
+            function buildCorrectionPayload() {
+                if (!currentCorrection) return null;
+                var fields = [];
+                var statutSel = form.querySelector('#Input_StatutOF');
+                var statut = statutSel.value;
+                if (!Array.from(statutSel.options).some(function (o) { return o.value === statut; })) {
+                    var opt = document.createElement('option');
+                    opt.value = statut;
+                    opt.textContent = statut;
+                    statutSel.appendChild(opt);
+                }
+                correctionFields.forEach(function (f) {
+                    var el = document.getElementById('Input_' + f);
+                    if (!el) return;
+                    var newVal = el.value;
+                    var orig = currentCorrection.originals['Input_' + f] !== undefined ? currentCorrection.originals['Input_' + f] : '';
+                    if (newVal !== orig) {
+                        fields.push({ field: f, value: newVal });
+                    }
+                });
+                return { projectKey: currentCorrection.originalKey, fields: fields };
+            }
+
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    if (!currentCorrection) return;
+                    e.preventDefault();
+                    var payload = buildCorrectionPayload();
+                    fetch('?handler=Correct', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': csrfToken },
+                        body: JSON.stringify({ projectKey: payload.projectKey, fields: payload.fields })
+                    }).then(function (r) { return r.json(); }).then(function (json) {
+                        if (json.success) { location.reload(); }
+                        else { alert(json.error || 'Valeur invalide.'); location.reload(); }
+                    }).catch(function () { location.reload(); });
+                });
+            }
+        })();
+    </script>
+}
+
+@functions {
+    string GetStatusBadgeClass(string? status)
+    {
+        return status?.ToLower() switch
+        {
+            "lancé" or "lancée" => "bg-success",
+            "en cours" => "bg-warning text-dark",
+            "terminé" or "terminée" => "bg-secondary",
+            _ => "bg-info"
+        };
+    }
+
+    string FormatDate(DateTime? dt)
+    {
+        return dt?.ToString("yyyy-MM-dd") ?? "-";
+    }
+
+    string Cell(AvancementOF of, string key, string? normal)
+    {
+        return EditCell(of, key, normal);
+    }
+
+    string EditCell(AvancementOF of, string key, string? normal)
+    {
+        if (of.Manuel)
+            return HtmlEncoder.Default.Encode(normal ?? "-");
+
+        if (!CorrectionFields.Avancement.TryGetValue(key, out _))
+            return normal ?? "-";
+
+        var encodedKey = HtmlEncoder.Default.Encode(of.Projet ?? "");
+        var isBad = of.BadValues.TryGetValue(key, out var bad);
+        var isCorrected = of.CorrectedFields.Contains(key);
+
+        var classes = new List<string> { "edit-cell" };
+        if (isBad) classes.Add("bad-value");
+        if (isCorrected) classes.Add("corrected-cell");
+
+        var display = isBad ? ("⚠ " + bad) : (normal ?? "-");
+        var editValue = isBad ? (bad ?? "") : (normal ?? "");
+        var title = isBad
+            ? $"Valeur invalide pour « {key} » : « {bad} » — cliquer pour corriger"
+            : (isCorrected ? "Valeur corrigée — cliquer pour modifier" : $"Cliquer pour modifier « {key} »");
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<span class=\"{string.Join(' ', classes)}\" data-edit-field=\"{key}\" data-edit-key=\"{encodedKey}\" data-edit-value=\"{HtmlEncoder.Default.Encode(editValue)}\" title=\"{HtmlEncoder.Default.Encode(title)}\">");
+        sb.Append(HtmlEncoder.Default.Encode(display));
+        sb.Append("</span>");
+        if (isCorrected)
+            sb.Append($"<button type=\"button\" class=\"reset-corr\" data-reset-key=\"{encodedKey}\" data-reset-field=\"{key}\" title=\"Réinitialiser la correction\">&#8635;</button>");
+        return sb.ToString();
+    }
+
+    string? GetStationValue(AvancementOF of, string propertyName)
+    {
+        var prop = typeof(AvancementOF).GetProperty(propertyName);
+        return prop?.GetValue(of)?.ToString();
+    }
+
+    string StationDataAttrs(AvancementOF of)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var (_, prop) in StationColumns.Stations)
+        {
+            var val = GetStationValue(of, prop);
+            sb.Append($" data-{prop.ToLowerInvariant()}=\"{HtmlEncoder.Default.Encode(val ?? "")}\"");
+        }
+        return sb.ToString();
+    }
+
+    string GetStationCellClass(string? val)
+    {
+        if (string.IsNullOrEmpty(val) || val == "N/A") return "text-muted";
+        if (val == "Terminée") return "table-success fw-semibold";
+        if (decimal.TryParse(val, out var num))
+        {
+            if (num < 0) return "table-danger fw-semibold";
+            if (num == 0) return "text-muted";
+        }
+        return "";
+    }
+
+    string? FormatStation(string? val)
+    {
+        if (string.IsNullOrEmpty(val) || val == "N/A") return "-";
+        return val;
+    }
+
+    string? Truncate(string? val, int maxLen)
+    {
+        if (string.IsNullOrEmpty(val)) return null;
+        return val.Length > maxLen ? val[..maxLen] + "..." : val;
+    }
+}

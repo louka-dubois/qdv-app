@@ -1,0 +1,14 @@
+@page
+@model QDVapp.Areas.Identity.Pages.Account.LockoutModel
+@{
+    ViewData["Title"] = "Compte verrouillé";
+}
+
+<h2 class="text-danger">Compte verrouillé</h2>
+<hr />
+
+<p>
+    Ce compte a été verrouillé en raison de trop nombreuses tentatives de connexion infructueuses.
+    Veuillez réessayer plus tard ou
+    <a asp-area="Identity" asp-page="/Account/ForgotPassword">réinitialiser votre mot de passe</a>.
+</p>

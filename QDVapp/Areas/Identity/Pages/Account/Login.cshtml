@@ -1,0 +1,38 @@
+@page
+@model QDVapp.Areas.Identity.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Connexion";
+}
+
+<h2>Connexion</h2>
+<hr />
+
+<div class="row">
+    <div class="col-md-6">
+        <form id="account" method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+            <div class="form-floating mb-3">
+                <input asp-for="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="nom@exemple.com" />
+                <label asp-for="Input.Email">Courriel</label>
+                <span asp-validation-for="Input.Email" class="text-danger"></span>
+            </div>
+            <div class="form-floating mb-3">
+                <input asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="Mot de passe" />
+                <label asp-for="Input.Password">Mot de passe</label>
+                <span asp-validation-for="Input.Password" class="text-danger"></span>
+            </div>
+            <div class="checkbox mb-3">
+                <label asp-for="Input.RememberMe" class="form-check-label">
+                    <input class="form-check-input" asp-for="Input.RememberMe" />
+                    Se souvenir de moi
+                </label>
+            </div>
+            <button id="login-submit" type="submit" class="w-100 btn btn-lg btn-primary">Se connecter</button>
+            <div class="mt-3">
+                <p><a id="forgot-password" asp-area="Identity" asp-page="/Account/ForgotPassword">Mot de passe oublié?</a></p>
+                <p><a asp-area="Identity" asp-page="/Account/Register" asp-route-returnUrl="@Model.ReturnUrl">Créer un nouveau compte</a></p>
+            </div>
+        </form>
+    </div>
+</div>
+

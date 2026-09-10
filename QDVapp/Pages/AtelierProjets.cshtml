@@ -1,0 +1,1159 @@
+@page
+@model AtelierProjetsModel
+@using System.Text.Encodings.Web
+@using QDVapp.Services
+@{
+    ViewData["Title"] = "Atelier - Projets";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Liste des projets dans l'usine</h1>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-primary fs-6">@Model.TotalCount projet(s)</span>
+        <a class="btn btn-sm btn-outline-primary" asp-page="/AtelierProjets" asp-page-handler="ExportCorrected">Exporter corrigé</a>
+        <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#createProjectModal" id="createProjectBtn">+ Nouveau projet</button>
+    </div>
+</div>
+
+<div class="upload-dropzone mb-3" data-upload-url="?handler=UploadAtelier" id="dropzoneAtelier">
+    <div class="upload-dropzone-content">
+        <span class="upload-dropzone-icon">&#128194;</span>
+        <p class="mb-1">Glissez le fichier Excel <strong>Atelier - Projets</strong> ici</p>
+        <small class="text-muted">ou cliquez pour sélectionner un fichier .xlsx</small>
+        <input type="file" class="d-none" accept=".xlsx" id="fileInputAtelier"/>
+    </div>
+    <div class="upload-dropzone-progress d-none">
+        <div class="spinner-border text-primary mb-2" role="status"></div>
+        <p class="mb-0">Import en cours...</p>
+    </div>
+    <div class="upload-dropzone-result d-none"></div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.SuccessMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show">
+        @Model.SuccessMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<partial name="_UploadReportAlert" model="Model.UploadReport"/>
+
+@if (Model.UploadReport?.Issues.Any(i => string.Equals(i.Sheet, "Liste des projets", StringComparison.OrdinalIgnoreCase)) == true)
+{
+    <div class="alert alert-danger mb-3">
+        <strong>Onglet principal non conforme&nbsp;:</strong> le tableau « Liste des projets » ne s'affiche pas correctement
+        (l'onglet est vide ou manquant). Vérifiez le fichier source.
+    </div>
+}
+
+@if (Model.SkippedRows.Count > 0)
+{
+    <div class="alert alert-danger mb-3">
+        <strong>@Model.SkippedRows.Count projet(s) ignoré(s) :</strong> certaines lignes n'ont pas pu être chargées et
+        n'apparaissent donc pas ci-dessous.
+        <ul class="mb-0 mt-1">
+            @foreach (var s in Model.SkippedRows)
+            {
+                <li>Ligne @s.Row — @s.Reason</li>
+            }
+        </ul>
+    </div>
+}
+
+
+@if (Model.Projets.Count == 0)
+{
+    <div class="alert alert-info">Aucune donnée trouvée.</div>
+}
+else
+{
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <small class="text-muted fw-semibold">Statut</small>
+                    <div class="d-flex gap-1 flex-wrap" id="filterStatut">
+                        <button class="btn btn-sm btn-outline-danger filter-btn active" data-filter="statut" data-value="V-">En retard</button>
+                        <button class="btn btn-sm btn-outline-warning filter-btn active" data-filter="statut" data-value="W-">Cette semaine</button>
+                        <button class="btn btn-sm btn-outline-info filter-btn active" data-filter="statut" data-value="X-">14 jours</button>
+                        <button class="btn btn-sm btn-outline-primary filter-btn active" data-filter="statut" data-value="Y-">21 jours</button>
+                        <button class="btn btn-sm btn-outline-secondary filter-btn active" data-filter="statut" data-value="Z-">3+ sem.</button>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <small class="text-muted fw-semibold">Vendeur</small>
+                    <select class="form-select form-select-sm" id="filterVendeur">
+                        <option value="">Tous</option>
+                        @foreach (var v in Model.Projets.Select(p => p.Vendeur).Where(v => !string.IsNullOrEmpty(v)).Distinct().OrderBy(v => v))
+                        {
+                            <option value="@v">@v</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <small class="text-muted fw-semibold">Restant (heures)</small>
+                    <div class="d-flex gap-1" id="filterRestant">
+                        <button class="btn btn-sm btn-outline-dark filter-btn active" data-filter="restant" data-value="all">Tous</button>
+                        <button class="btn btn-sm btn-outline-dark filter-btn" data-filter="restant" data-value="&lt;20">&lt; 20</button>
+                        <button class="btn btn-sm btn-outline-dark filter-btn" data-filter="restant" data-value="&lt;100">&lt; 100</button>
+                        <button class="btn btn-sm btn-outline-dark filter-btn" data-filter="restant" data-value="&gt;100">&gt; 100</button>
+                        <button class="btn btn-sm btn-outline-dark filter-btn" data-filter="restant" data-value="&gt;500">&gt; 500</button>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <input type="search" class="form-control form-control-sm" id="searchInput" placeholder="Rechercher…" style="width:180px">
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-sm btn-outline-secondary" id="clearFilters">Effacer filtres</button>
+                </div>
+                <div class="col-auto ms-auto">
+                    <span class="badge bg-secondary fs-6" id="filterCount">@Model.TotalCount projet(s)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm align-middle @(Model.UploadReport?.Issues.Any(i => string.Equals(i.Sheet, "Liste des projets", StringComparison.OrdinalIgnoreCase)) == true ? "table-non-compliant" : null)" id="projetsTable" data-expand="@Model.ExpandRef">
+            <thead class="table-dark">
+                <tr>
+                    <th class="col-expand"></th>
+                    <th>Statut</th>
+                    <th>No Projet</th>
+                    <th>Réf OF</th>
+                    <th>Description</th>
+                    <th>Vendeur</th>
+                    <th>Date requise</th>
+                    <th>Restant (h)</th>
+                    <th class="col-extra">Code Article</th>
+                    <th class="col-extra">Planifié</th>
+                    <th class="col-extra">Fait</th>
+                    <th class="col-extra">Décl. av</th>
+                    <th class="col-extra">Tps Total Estimé</th>
+                    <th class="col-extra">Jrs ST Planif.</th>
+                    <th class="col-extra">Diff</th>
+                    <th class="col-extra">% Diff</th>
+                    <th class="col-extra">Note Fab</th>
+                    <th class="col-extra">Commentaire OF</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Model.Projets)
+                {
+                    var rowId = p.RefOF ?? p.Id ?? Guid.NewGuid().ToString();
+                    var searchText = (p.Statut + " " + p.NoCmd + " " + p.RefOF + " " + p.Description + " " + p.Vendeur + " " + FormatDate(p.DateRequise) + " " + FormatRestant(p.Restant)).ToLowerInvariant();
+                    var projetHasErrors = p.BadValues.Count > 0;
+                    <tr class="main-row @(projetHasErrors ? "row-error" : "")" data-of-id="@rowId" data-statut="@(p.Statut ?? "")" data-vendeur="@(p.Vendeur ?? "")" data-restant="@(p.Restant?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")" data-search="@searchText" data-nocmd="@p.NoCmd" data-refof="@p.RefOF" data-codearticle="@p.CodeArticle" data-description="@p.Description" data-daterequise="@(p.DateRequise?.ToString("yyyy-MM-dd"))" data-planifie="@(p.Planifie?.ToString(System.Globalization.CultureInfo.InvariantCulture))" data-fait="@(p.Fait?.ToString(System.Globalization.CultureInfo.InvariantCulture))" data-notefab="@p.NoteFab" data-commentaireof="@p.CommentaireOF" data-jrsst="@(p.JrsSTPlanifie?.ToString(System.Globalization.CultureInfo.InvariantCulture))">
+                        <td class="col-expand text-center expand-toggle">
+                            @if (projetHasErrors)
+                            {
+                                <span class="row-error-icon" title="Valeurs invalides">&#9888;</span>
+                            }
+                            <span class="expand-icon">&#9654;</span>
+                        </td>
+                        <td>
+                            <span class="badge @GetStatusBadge(p.Statut)">@Html.Raw(EditCell(p, "Statut", p.Statut ?? "-"))</span>
+                            @if (p.Manuel)
+                            {
+                                <span class="badge bg-success ms-1">Manuel</span>
+                            }
+                        </td>
+                        <td class="fw-semibold text-nowrap">
+                            <div class="d-flex align-items-center justify-content-between gap-2">
+                                <span class="text-nowrap">@Html.Raw(EditCell(p, "NoCmd", p.NoCmd ?? "-"))</span>
+                                @if (!p.Manuel)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 update-project" title="Modifier ce projet (correction)" data-of-id="@rowId">&#9998;</button>
+                                }
+                                @if (p.Manuel)
+                                {
+                                    <span class="d-flex align-items-center gap-1 text-nowrap">
+                                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 edit-manual" title="Modifier ce projet"
+                                                data-bs-toggle="modal" data-bs-target="#createProjectModal"
+                                                data-id="@p.Id"
+                                                data-nocmd="@p.NoCmd"
+                                                data-refof="@p.RefOF"
+                                                data-statut="@p.Statut"
+                                                data-vendeur="@p.Vendeur"
+                                                data-description="@p.Description"
+                                                data-codearticle="@p.CodeArticle"
+                                                data-daterequise="@(p.DateRequise?.ToString("yyyy-MM-dd"))"
+                                                data-planifie="@(p.Planifie?.ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                                                data-fait="@(p.Fait?.ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                                                data-restant="@(p.Restant?.ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                                                data-jrsst="@(p.JrsSTPlanifie?.ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                                                data-notefab="@p.NoteFab"
+                                                data-commentaireof="@p.CommentaireOF">&#9998;</button>
+                                        <form method="post" asp-page-handler="Delete" class="d-inline">
+                                            <input type="hidden" name="id" value="@p.Id"/>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Supprimer ce projet" onclick="return confirm('Supprimer ce projet manuel ?');">&#215;</button>
+                                        </form>
+                                    </span>
+                                }
+                            </div>
+                        </td>
+                        <td class="text-nowrap">
+                            @if (!string.IsNullOrWhiteSpace(p.RefOF ?? p.NoCmd))
+                            {
+                                <a class="ref-of-link" href="@Url.Page("/AvancementOF", new { @ref = p.RefOF ?? p.NoCmd })" title="Voir l'OF correspondant">@Html.Raw(EditCell(p, "RefOF", p.RefOF ?? "-"))</a>
+                            }
+                            else
+                            {
+                                @Html.Raw(EditCell(p, "RefOF", "-"))
+                            }
+                        </td>
+                        <td style="max-width: 220px; white-space: normal;" title="@p.Description">
+                            @Html.Raw(EditCell(p, "Description", Truncate(p.Description, 60) ?? "-"))
+                        </td>
+                        <td class="text-nowrap small">@Html.Raw(EditCell(p, "Vendeur", p.Vendeur ?? "-"))</td>
+                        <td class="text-nowrap small">@Html.Raw(Cell(p, "DateRequise", FormatDate(p.DateRequise)))</td>
+                        <td class="fw-semibold @(p.Restant.HasValue && p.Restant < 10 ? "restant-danger" : "")">@Html.Raw(Cell(p, "Restant", FormatRestant(p.Restant)))</td>
+                        <td class="col-extra small">@Html.Raw(Cell(p, "CodeArticle", p.CodeArticle ?? "-"))</td>
+                        <td class="col-extra small">@Html.Raw(Cell(p, "Planifie", FormatHours(p.Planifie)))</td>
+                        <td class="col-extra small">@Html.Raw(Cell(p, "Fait", FormatHours(p.Fait)))</td>
+                        <td class="col-extra small">@Html.Raw(Cell(p, "DeclAv", FormatPct(p.DeclAv)))</td>
+                        <td class="col-extra small">@Html.Raw(Cell(p, "TempsTotalFinEstime", FormatHours(p.TempsTotalFinEstime)))</td>
+                        <td class="col-extra small">@Html.Raw(Cell(p, "JrsSTPlanifie", FormatHours(p.JrsSTPlanifie)))</td>
+                        <td class="col-extra small @GetDiffClass(p.Diff)">@p.Diff</td>
+                        <td class="col-extra small @GetPctDiffClass(p.PctDiff)">@FormatPctDiff(p.PctDiff)</td>
+                        <td class="col-extra small">@Html.Raw(EditCell(p, "NoteFab", p.NoteFab ?? "-"))</td>
+                        <td class="col-extra" style="max-width: 200px; white-space: normal; font-size: 0.8rem;" title="@p.CommentaireOF">
+                            @Html.Raw(EditCell(p, "CommentaireOF", Truncate(p.CommentaireOF, 50) ?? "-"))
+                        </td>
+                    </tr>
+                    <tr class="detail-row" data-of-id="@rowId">
+                        <td colspan="8">
+                            <div class="detail-inner">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-4"><strong>Code Article :</strong> @Html.Raw(Cell(p, "CodeArticle", p.CodeArticle ?? "-"))</div>
+                                    <div class="col-md-4"><strong>Vendeur :</strong> @Html.Raw(EditCell(p, "Vendeur", p.Vendeur ?? "-"))</div>
+                                    <div class="col-md-4"><strong>Date requise :</strong> @Html.Raw(EditCell(p, "DateRequise", FormatDate(p.DateRequise)))</div>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Description :</strong>
+                                    <div>@Html.Raw(EditCell(p, "Description", p.Description ?? "-"))</div>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-3">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Planifié</span>
+                                            <span class="stat-value">@Html.Raw(Cell(p, "Planifie", FormatHours(p.Planifie) + " h"))</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Fait (réel)</span>
+                                            <span class="stat-value">@Html.Raw(Cell(p, "Fait", FormatHours(p.Fait) + " h"))</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Restant</span>
+                                            <span class="stat-value">@Html.Raw(Cell(p, "Restant", FormatRestant(p.Restant) + " h"))</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Total estimé</span>
+                                            <span class="stat-value">@Html.Raw(Cell(p, "TempsTotalFinEstime", FormatHours(p.TempsTotalFinEstime) + " h"))</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-2">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Décl. av.</span>
+                                            <span class="stat-value">@Html.Raw(Cell(p, "DeclAv", FormatPct(p.DeclAv)))</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Jrs ST planif.</span>
+                                            <span class="stat-value">@Html.Raw(Cell(p, "JrsSTPlanifie", FormatHours(p.JrsSTPlanifie)))</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Diff</span>
+                                            <span class="stat-value @GetDiffClass(p.Diff)">@(p.Diff ?? "-")</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="stat-card">
+                                            <span class="stat-label">% Diff</span>
+                                            <span class="stat-value @GetPctDiffClass(p.PctDiff)">@FormatPctDiff(p.PctDiff)</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="stat-card">
+                                            <span class="stat-label">Note Fab</span>
+                                            <span class="stat-value">@Html.Raw(EditCell(p, "NoteFab", p.NoteFab ?? "-"))</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(p.CommentaireOF))
+                                {
+                                    <div class="mt-2">
+                                        <strong>Commentaire OF :</strong>
+                                        <div>@Html.Raw(EditCell(p, "CommentaireOF", p.CommentaireOF ?? "-"))</div>
+                                    </div>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-2 mb-3" id="paginationControls">
+        <div class="d-flex align-items-center gap-2">
+            <select class="form-select form-select-sm" id="pageSizeSelect" style="width: auto;">
+                <option value="25">25 / page</option>
+                <option value="50" selected>50 / page</option>
+                <option value="100">100 / page</option>
+                <option value="9999">Tout</option>
+            </select>
+            <span class="text-muted small" id="paginationInfo"></span>
+        </div>
+        <div class="d-flex align-items-center gap-1">
+            <button class="btn btn-sm btn-outline-secondary" id="prevPage" disabled>&laquo; Préc</button>
+            <span class="mx-2 small fw-semibold" id="pageIndicator"></span>
+            <button class="btn btn-sm btn-outline-secondary" id="nextPage" disabled>Suiv &raquo;</button>
+        </div>
+    </div>
+
+    <div id="sumTooltip" class="sum-tooltip" style="display:none;">
+        <div class="sum-tooltip-header"></div>
+        <div class="sum-tooltip-body"></div>
+    </div>
+}
+
+<div class="modal fade" id="createProjectModal" tabindex="-1" aria-labelledby="createProjectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="Create" id="projectForm">
+                <input type="hidden" asp-for="Input.Id"/>
+                <input type="hidden" id="ProjectKey" name="ProjectKey" value=""/>
+                <input type="hidden" id="IsCorrection" name="IsCorrection" value="false"/>
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createProjectModalLabel">Nouveau projet</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <h6 class="text-primary fw-bold mb-3">Informations projet</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label" asp-for="Input.NoCmd">No projet *</label>
+                            <input class="form-control" asp-for="Input.NoCmd" required/>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" asp-for="Input.Statut">Statut</label>
+                            <select class="form-select" asp-for="Input.Statut">
+                                <option value="">—</option>
+                                <option value="V-">V- En retard</option>
+                                <option value="W-">W- Cette semaine</option>
+                                <option value="X-">X- 14 jours</option>
+                                <option value="Y-">Y- 21 jours</option>
+                                <option value="Z-" selected>Z- 3+ sem.</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" asp-for="Input.DateRequise">Date requise</label>
+                            <input type="date" class="form-control" asp-for="Input.DateRequise"/>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" asp-for="Input.Vendeur">Vendeur</label>
+                            <select class="form-select" asp-for="Input.Vendeur">
+                                <option value="">—</option>
+                                @foreach (var v in Model.Projets.Select(p => p.Vendeur).Where(v => !string.IsNullOrEmpty(v)).Distinct().OrderBy(v => v))
+                                {
+                                    <option value="@v">@v</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" asp-for="Input.CodeArticle">Code article</label>
+                            <input class="form-control" asp-for="Input.CodeArticle"/>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" asp-for="Input.Description">Description</label>
+                            <input class="form-control" asp-for="Input.Description"/>
+                        </div>
+                    </div>
+
+                    <div class="accordion mb-2" id="ofAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="ofHeading">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#ofCollapse" aria-expanded="false" aria-controls="ofCollapse">
+                                    Ordre de fabrication (OF)
+                                </button>
+                            </h2>
+                            <div id="ofCollapse" class="accordion-collapse collapse" aria-labelledby="ofHeading" data-bs-parent="#ofAccordion">
+                                <div class="accordion-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label" asp-for="Input.RefOF">Réf OF</label>
+                                            <input class="form-control" asp-for="Input.RefOF"/>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label" asp-for="Input.Planifie">Planifié (h)</label>
+                                            <input type="number" step="any" min="0" class="form-control" asp-for="Input.Planifie"/>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label" asp-for="Input.Fait">Fait (réel)</label>
+                                            <input type="number" step="any" min="0" class="form-control" asp-for="Input.Fait"/>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label" asp-for="Input.Restant">Restant (h)</label>
+                                            <input type="number" step="any" min="0" class="form-control" asp-for="Input.Restant"/>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label" asp-for="Input.JrsSTPlanifie">Jrs ST planifié</label>
+                                            <input type="number" step="1" min="0" class="form-control" asp-for="Input.JrsSTPlanifie"/>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label" asp-for="Input.NoteFab">Note Fab</label>
+                                            <input class="form-control" asp-for="Input.NoteFab"/>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label" asp-for="Input.CommentaireOF">Commentaire OF</label>
+                                            <textarea class="form-control" asp-for="Input.CommentaireOF" rows="2"></textarea>
+                                        </div>
+                                        <div class="col-12">
+                                            <div class="fw-semibold small mb-1">Calcul automatique</div>
+                                            <div class="row g-2">
+                                                <div class="col-6 col-md-3">
+                                                    <div class="stat-card">
+                                                        <span class="stat-label">Total estimé</span>
+                                                        <span class="stat-value" id="calcTotal">–</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6 col-md-3">
+                                                    <div class="stat-card">
+                                                        <span class="stat-label">Décl. av.</span>
+                                                        <span class="stat-value" id="calcDeclav">–</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6 col-md-3">
+                                                    <div class="stat-card">
+                                                        <span class="stat-label">Diff</span>
+                                                        <span class="stat-value" id="calcDiff">–</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6 col-md-3">
+                                                    <div class="stat-card">
+                                                        <span class="stat-label">% Diff</span>
+                                                        <span class="stat-value" id="calcPctdiff">–</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success" id="projectModalSubmit">Ajouter le projet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const table = document.getElementById('projetsTable');
+            const tooltip = document.getElementById('sumTooltip');
+            var currentPage = 1;
+            var pageSize = 50;
+            var filteredMainRows = [];
+
+            function collapseAll() {
+                table.querySelectorAll('.detail-row.visible').forEach(function (r) {
+                    r.classList.remove('visible');
+                });
+                table.querySelectorAll('.expand-icon').forEach(function (i) {
+                    i.innerHTML = '&#9654;';
+                });
+            }
+
+            function applyFilters() {
+                var statutVals = [];
+                document.querySelectorAll('#filterStatut .filter-btn.active').forEach(function (b) {
+                    statutVals.push(b.dataset.value);
+                });
+
+                var vendeurVal = document.getElementById('filterVendeur').value;
+
+                var restantVal = 'all';
+                document.querySelectorAll('#filterRestant .filter-btn.active').forEach(function (b) {
+                    restantVal = b.dataset.value;
+                });
+
+                var allRows = table.querySelectorAll('.main-row');
+                filteredMainRows = [];
+                allRows.forEach(function (row) {
+                    var show = true;
+
+                    var rowStatut = (row.dataset.statut || '');
+                    var statutMatch = rowStatut === '' || statutVals.some(function (v) { return rowStatut.indexOf(v) === 0; });
+                    if (!statutMatch) show = false;
+
+                    if (show && vendeurVal) {
+                        if ((row.dataset.vendeur || '') !== vendeurVal) show = false;
+                    }
+
+                    if (show && restantVal !== 'all') {
+                        var rowRestant = parseFloat(row.dataset.restant);
+                        var op = restantVal.charAt(0);
+                        var threshold = parseFloat(restantVal.substring(1));
+                        if (isNaN(rowRestant) || isNaN(threshold)) show = false;
+                        else if (op === '<' && !(rowRestant < threshold)) show = false;
+                        else if (op === '>' && !(rowRestant > threshold)) show = false;
+                    }
+
+                    if (show) {
+                        var searchVal = document.getElementById('searchInput').value.trim().toLowerCase();
+                        if (searchVal) {
+                            var rowSearch = (row.dataset.search || '');
+                            if (rowSearch.indexOf(searchVal) === -1) show = false;
+                        }
+                    }
+
+                    if (show) filteredMainRows.push(row);
+                });
+
+                document.getElementById('filterCount').textContent = filteredMainRows.length + ' / ' + allRows.length + ' projet(s)';
+                currentPage = 1;
+                applyPagination();
+            }
+
+            function applyPagination() {
+                var total = filteredMainRows.length;
+                var totalPages = pageSize >= total ? 1 : Math.ceil(total / pageSize);
+                if (currentPage > totalPages) currentPage = totalPages;
+                if (currentPage < 1) currentPage = 1;
+
+                var start = (currentPage - 1) * pageSize;
+                var end = start + pageSize;
+
+                table.querySelectorAll('.main-row').forEach(function (row) { row.style.display = 'none'; });
+                table.querySelectorAll('.detail-row').forEach(function (row) { row.style.display = 'none'; row.classList.remove('visible'); });
+                table.querySelectorAll('.expand-icon').forEach(function (i) { i.innerHTML = '&#9654;'; });
+
+                var shown = 0;
+                filteredMainRows.forEach(function (row, idx) {
+                    if (idx >= start && idx < end) {
+                        row.style.display = '';
+                        shown++;
+                        var id = row.dataset.ofId;
+                        var detail = table.querySelector('.detail-row[data-of-id="' + id + '"]');
+                        if (detail) detail.style.display = '';
+                    }
+                });
+
+                var from = total === 0 ? 0 : start + 1;
+                var to = Math.min(end, total);
+                document.getElementById('paginationInfo').textContent = from + '–' + to + ' sur ' + total;
+                document.getElementById('pageIndicator').textContent = 'Page ' + currentPage + ' / ' + totalPages;
+                document.getElementById('prevPage').disabled = currentPage <= 1;
+                document.getElementById('nextPage').disabled = currentPage >= totalPages;
+
+                var controls = document.getElementById('paginationControls');
+                controls.style.display = total === 0 ? 'none' : '';
+            }
+
+            document.getElementById('prevPage').addEventListener('click', function () {
+                currentPage--;
+                applyPagination();
+            });
+            document.getElementById('nextPage').addEventListener('click', function () {
+                currentPage++;
+                applyPagination();
+            });
+            document.getElementById('pageSizeSelect').addEventListener('change', function () {
+                pageSize = parseInt(this.value, 10);
+                currentPage = 1;
+                applyPagination();
+            });
+
+            document.querySelectorAll('#filterStatut .filter-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    this.classList.toggle('active');
+                    applyFilters();
+                });
+            });
+
+            document.getElementById('filterVendeur').addEventListener('change', function () {
+                applyFilters();
+            });
+
+            document.querySelectorAll('#filterRestant .filter-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var parent = this.parentElement;
+                    parent.querySelectorAll('.filter-btn').forEach(function (b) { b.classList.remove('active'); });
+                    this.classList.add('active');
+                    applyFilters();
+                });
+            });
+
+            document.getElementById('searchInput').addEventListener('input', function () {
+                applyFilters();
+            });
+
+            document.getElementById('clearFilters').addEventListener('click', function () {
+                document.querySelectorAll('#filterStatut .filter-btn').forEach(function (b) { b.classList.add('active'); });
+                document.getElementById('filterVendeur').value = '';
+                document.getElementById('searchInput').value = '';
+                document.querySelectorAll('#filterRestant .filter-btn').forEach(function (b) { b.classList.remove('active'); });
+                document.querySelector('#filterRestant .filter-btn[data-value="all"]').classList.add('active');
+                applyFilters();
+            });
+
+            function hideSum() { tooltip.style.display = 'none'; }
+
+            function numVal(id) {
+                var el = document.getElementById(id);
+                var v = el ? parseFloat(el.value) : NaN;
+                return isNaN(v) ? null : v;
+            }
+
+            function setCalc(id, text) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = text;
+            }
+
+            function statutPrefix(v) {
+                var m = (v || '').match(/^([VWXYZ])-/);
+                if (m) return m[1] + '-';
+                return v || '';
+            }
+
+            function updateComputed() {
+                var plan = numVal('Input_Planifie');
+                var fait = numVal('Input_Fait');
+                var rest = numVal('Input_Restant');
+
+                var ttf = (fait !== null || rest !== null) ? (fait || 0) + (rest || 0) : null;
+                var diff = (plan !== null && ttf !== null) ? plan - ttf : null;
+                var pct;
+                if (diff !== null && plan !== null && plan > 0) pct = (diff / plan) * 100;
+                else if (plan === 0) pct = diff === 0 ? 0 : null;
+
+                setCalc('calcTotal', ttf !== null ? ttf.toFixed(2) : '–');
+                setCalc('calcDeclav', plan === 0 ? '0 %' : (plan !== null && plan > 0 && rest !== null) ? (((plan - rest) / plan) * 100).toFixed(0) + ' %' : '–');
+                setCalc('calcDiff', diff !== null ? diff.toFixed(2) : '–');
+                setCalc('calcPctdiff', pct !== null ? pct.toFixed(2) + ' %' : (diff !== null && plan === 0 ? 'Erreur' : '–'));
+            }
+
+            ['Input_Planifie', 'Input_Fait', 'Input_Restant'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.addEventListener('input', updateComputed);
+            });
+
+            var projectModalEl = document.getElementById('createProjectModal');
+            var editTarget = null;
+
+            document.querySelectorAll('.update-project').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var row = document.querySelector('.main-row[data-of-id="' + CSS.escape(btn.dataset.ofId) + '"]');
+                    openModalForCorrection(row);
+                });
+            });
+
+            if (projectModalEl) {
+                projectModalEl.addEventListener('show.bs.modal', function (e) {
+                    var trigger = e.relatedTarget;
+                    if (trigger) {
+                        if (trigger.classList && trigger.classList.contains('edit-manual')) {
+                            editTarget = trigger;
+                        } else {
+                            editTarget = null;
+                        }
+                    }
+                    projectModalEl.querySelector('form').reset();
+                    var idInput = document.getElementById('Input_Id');
+                    if (idInput) idInput.value = '';
+                    projectModalEl.querySelector('.modal-title').textContent = 'Nouveau projet';
+                    document.getElementById('projectModalSubmit').textContent = 'Ajouter le projet';
+
+                    if (editTarget) {
+                        var d = editTarget.dataset;
+                        document.getElementById('Input_NoCmd').value = d.nocmd || '';
+                        document.getElementById('Input_RefOF').value = d.refof || '';
+                        document.getElementById('Input_Statut').value = statutPrefix(d.statut);
+                        var vendeurSel = document.getElementById('Input_Vendeur');
+                        if (d.vendeur && !Array.from(vendeurSel.options).some(function (o) { return o.value === d.vendeur; })) {
+                            var opt = document.createElement('option');
+                            opt.value = d.vendeur;
+                            opt.textContent = d.vendeur;
+                            vendeurSel.appendChild(opt);
+                        }
+                        vendeurSel.value = d.vendeur || '';
+                        document.getElementById('Input_Description').value = d.description || '';
+                        document.getElementById('Input_CodeArticle').value = d.codearticle || '';
+                        document.getElementById('Input_DateRequise').value = d.daterequise || '';
+                        document.getElementById('Input_Planifie').value = d.planifie || '';
+                        document.getElementById('Input_Fait').value = d.fait || '';
+                        document.getElementById('Input_Restant').value = d.restant || '';
+                        document.getElementById('Input_JrsSTPlanifie').value = d.jrsst || '';
+                        document.getElementById('Input_NoteFab').value = d.notefab || '';
+                        document.getElementById('Input_CommentaireOF').value = d.commentaireof || '';
+                        if (idInput) idInput.value = d.id || '';
+                        projectModalEl.querySelector('.modal-title').textContent = 'Modifier le projet';
+                        document.getElementById('projectModalSubmit').textContent = 'Enregistrer';
+                    }
+
+                    if (editTarget && editTarget.isCorrection) {
+                        document.getElementById('IsCorrection').value = 'true';
+                        document.getElementById('ProjectKey').value = editTarget.originalKey || '';
+                        currentCorrection = editTarget;
+                        projectModalEl.querySelector('.modal-title').textContent = 'Modifier le projet';
+                        document.getElementById('projectModalSubmit').textContent = 'Enregistrer la correction';
+                    } else {
+                        document.getElementById('IsCorrection').value = 'false';
+                        document.getElementById('ProjectKey').value = '';
+                        currentCorrection = null;
+                    }
+                    updateComputed();
+                });
+            }
+
+            var correctionFields = ['Statut', 'NoCmd', 'RefOF', 'CodeArticle', 'Description', 'Vendeur', 'DateRequise', 'JrsSTPlanifie', 'Planifie', 'Fait', 'Restant', 'NoteFab', 'CommentaireOF'];
+            var currentCorrection = null;
+
+            function openModalForCorrection(row) {
+                if (!row) return;
+                var d = row.dataset;
+                editTarget = {
+                    isCorrection: true,
+                    rowId: row.dataset.ofId,
+                    originalKey: d.nocmd || '',
+                    originals: {
+                        Statut: d.statut || '', NoCmd: d.nocmd || '', RefOF: d.refof || '',
+                        CodeArticle: d.codearticle || '', Description: d.description || '', Vendeur: d.vendeur || '',
+                        DateRequise: d.daterequise || '', JrsSTPlanifie: d.jrsst || '', Planifie: d.planifie || '', Fait: d.fait || '',
+                        Restant: d.restant || '', NoteFab: d.notefab || '', CommentaireOF: d.commentaireof || ''
+                    },
+                    dataset: {
+                        nocmd: d.nocmd || '', refof: d.refof || '', statut: d.statut || '', vendeur: d.vendeur || '',
+                        description: d.description || '', codearticle: d.codearticle || '', daterequise: d.daterequise || '',
+                        planifie: d.planifie || '', fait: d.fait || '', restant: d.restant || '',
+                        jrsst: d.jrsst || '', notefab: d.notefab || '', commentaireof: d.commentaireof || '', id: ''
+                    }
+                };
+                bootstrap.Modal.getOrCreateInstance(projectModalEl).show();
+            }
+            window.openModalForCorrection = openModalForCorrection;
+
+            function buildCorrectionPayload() {
+                if (!currentCorrection) return null;
+                var fields = [];
+                correctionFields.forEach(function (f) {
+                    var el = document.getElementById('Input_' + f);
+                    if (!el) return;
+                    var newVal = el.value;
+                    var orig = currentCorrection.originals[f] || '';
+                    if (newVal !== orig) {
+                        fields.push({ field: f, value: newVal });
+                    }
+                });
+                return { projectKey: currentCorrection.originalKey, fields: fields, rowId: currentCorrection.rowId };
+            }
+
+            var projectForm = document.getElementById('projectForm');
+            if (projectForm) {
+                projectForm.addEventListener('submit', function (e) {
+                    if (!currentCorrection) return;
+                    e.preventDefault();
+                    var payload = buildCorrectionPayload();
+                    var csrf = document.querySelector('input[name="__RequestVerificationToken"]');
+                    var csrfToken = csrf ? csrf.value : '';
+                    fetch('?handler=Correct', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': csrfToken },
+                        body: JSON.stringify({ projectKey: payload.projectKey, fields: payload.fields })
+                    }).then(function (r) { return r.json(); }).then(function (json) {
+                        if (!json.success) alert(json.error || 'Valeur invalide.');
+                        if (window.reloadAtState) window.reloadAtState(payload.rowId);
+                        else location.reload();
+                    }).catch(function () {
+                        if (window.reloadAtState) window.reloadAtState(payload.rowId);
+                        else location.reload();
+                    });
+                });
+            }
+
+            document.querySelectorAll('.ref-of-link').forEach(function (a) {
+                a.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                });
+            });
+
+            table.addEventListener('click', function (e) {
+                hideSum();
+
+                if (e.target.closest('form')) return;
+                if (e.target.closest('.edit-manual')) return;
+
+                var row = e.target.closest('.main-row');
+                if (!row) return;
+
+                var id = row.dataset.ofId;
+                var detail = table.querySelector('.detail-row[data-of-id="' + id + '"]');
+                var icon = row.querySelector('.expand-icon');
+                if (!detail) return;
+
+                var wasVisible = detail.classList.contains('visible');
+                collapseAll();
+                if (!wasVisible) {
+                    detail.classList.add('visible');
+                    if (icon) icon.innerHTML = '&#9660;';
+                }
+            });
+
+            var expandRef = table.getAttribute('data-expand');
+            var hasRefParam = new URLSearchParams(window.location.search).has('ref');
+            var targetRow = null;
+            if (expandRef) {
+                targetRow = table.querySelector('.main-row[data-of-id="' + CSS.escape(expandRef) + '"]')
+                         || table.querySelector('.main-row[data-nocmd="' + CSS.escape(expandRef) + '"]');
+            }
+
+            if (hasRefParam) {
+                filteredMainRows = Array.from(table.querySelectorAll('.main-row'));
+                if (targetRow) {
+                    var refIdx = filteredMainRows.indexOf(targetRow);
+                    if (refIdx >= 0) currentPage = Math.floor(refIdx / pageSize) + 1;
+                }
+                applyPagination();
+                if (targetRow) {
+                    var targetOfId = targetRow.dataset.ofId;
+                    var detail = table.querySelector('.detail-row[data-of-id="' + CSS.escape(targetOfId) + '"]');
+                    var icon = targetRow.querySelector('.expand-icon');
+                    if (detail) {
+                        detail.classList.add('visible');
+                        if (icon) icon.innerHTML = '&#9660;';
+                        setTimeout(function () {
+                            targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 100);
+                    }
+                }
+            }
+
+            function restoreFiltersFromUrl() {
+                var q = new URLSearchParams(window.location.search);
+
+                var statutParam = q.get('statut');
+                if (statutParam) {
+                    var statutVals = statutParam.split(',');
+                    document.querySelectorAll('#filterStatut .filter-btn').forEach(function (b) {
+                        b.classList.toggle('active', statutVals.indexOf(b.dataset.value) !== -1);
+                    });
+                }
+
+                var vendeurParam = q.get('vendeur');
+                if (vendeurParam != null) {
+                    var vendeurSel = document.getElementById('filterVendeur');
+                    var opt = Array.from(vendeurSel.options).find(function (o) { return o.value === vendeurParam; });
+                    if (!opt) {
+                        opt = document.createElement('option');
+                        opt.value = vendeurParam;
+                        opt.textContent = vendeurParam;
+                        vendeurSel.appendChild(opt);
+                    }
+                    vendeurSel.value = vendeurParam;
+                }
+
+                var restantParam = q.get('restant');
+                if (restantParam) {
+                    document.querySelectorAll('#filterRestant .filter-btn').forEach(function (b) {
+                        b.classList.toggle('active', b.dataset.value === restantParam);
+                    });
+                }
+
+                var searchParam = q.get('search');
+                if (searchParam != null) {
+                    document.getElementById('searchInput').value = searchParam;
+                }
+            }
+
+            if (!hasRefParam) {
+                restoreFiltersFromUrl();
+                applyFilters();
+            }
+            history.replaceState(null, '', window.location.pathname);
+        })();
+    </script>
+
+    <script>
+        (function () {
+            var csrf = document.querySelector('input[name="__RequestVerificationToken"]');
+            var csrfToken = csrf ? csrf.value : '';
+            var activeInput = null;
+
+            function rawOf(span) {
+                if (span.dataset.editValue !== undefined) return span.dataset.editValue;
+                return span.textContent.replace(/^\s*⚠\s*/, '');
+            }
+
+            function rowIdOf(el) {
+                var row = el.closest('.main-row, .detail-row');
+                return row ? row.dataset.ofId : null;
+            }
+
+            function reloadAt(rowId) {
+                var params = [];
+                var statutVals = [];
+                document.querySelectorAll('#filterStatut .filter-btn').forEach(function (b) {
+                    if (b.classList.contains('active')) statutVals.push(b.dataset.value);
+                });
+                if (statutVals.length && statutVals.length < document.querySelectorAll('#filterStatut .filter-btn').length)
+                    params.push('statut=' + encodeURIComponent(statutVals.join(',')));
+
+                var vendeurVal = document.getElementById('filterVendeur').value;
+                if (vendeurVal) params.push('vendeur=' + encodeURIComponent(vendeurVal));
+
+                var restantVal = 'all';
+                document.querySelectorAll('#filterRestant .filter-btn.active').forEach(function (b) {
+                    restantVal = b.dataset.value;
+                });
+                if (restantVal !== 'all') params.push('restant=' + encodeURIComponent(restantVal));
+
+                var searchVal = document.getElementById('searchInput').value.trim();
+                if (searchVal) params.push('search=' + encodeURIComponent(searchVal));
+
+                if (rowId) params.push('ref=' + encodeURIComponent(rowId));
+
+                var qs = params.length ? '?' + params.join('&') : '';
+                location.href = qs;
+            }
+            window.reloadAtState = reloadAt;
+
+            function beginEdit(span) {
+                var field = span.dataset.editField;
+                var key = span.dataset.editKey;
+                var rowId = rowIdOf(span);
+                var current = rawOf(span);
+
+                var rect = span.getBoundingClientRect();
+                var input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-control bad-edit-float';
+                input.value = current;
+                input.style.left = rect.left + 'px';
+                input.style.top = rect.top + 'px';
+                input.style.width = Math.max(rect.width, 120) + 'px';
+                input.style.height = Math.max(rect.height, 28) + 'px';
+                document.body.appendChild(input);
+                activeInput = input;
+                input.focus();
+                input.select();
+
+                function cleanup() {
+                    if (activeInput) { activeInput.remove(); activeInput = null; }
+                }
+
+                function finish(save) {
+                    var val = input.value;
+                    cleanup();
+                    if (save && val !== current) {
+                        saveCorrection(key, field, val, rowId);
+                    } else {
+                        reloadAt(rowId);
+                    }
+                }
+
+                input.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+                    else if (e.key === 'Escape') { e.preventDefault(); cleanup(); reloadAt(rowId); }
+                });
+                input.addEventListener('blur', function () { finish(false); });
+                window.addEventListener('resize', cleanup, { once: true });
+            }
+
+            function showEditError(loc, error) {
+                var span = document.createElement('span');
+                span.className = 'bad-value';
+                span.style.cursor = 'pointer';
+                span.title = error;
+                span.textContent = '⚠ ' + error;
+                var holder = document.createElement('div');
+                holder.style.position = 'absolute';
+                holder.style.left = loc.left + 'px';
+                holder.style.top = loc.top + 'px';
+                holder.style.zIndex = 9999;
+                holder.appendChild(span);
+                document.body.appendChild(holder);
+                span.addEventListener('click', function () { holder.remove(); location.reload(); });
+            }
+
+            function saveCorrection(key, field, val, rowId) {
+                fetch('?handler=FixValue', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'RequestVerificationToken': csrfToken
+                    },
+                    body: JSON.stringify({ noCmd: key, field: field, value: val })
+                }).then(function (r) { return r.json(); }).then(function (json) {
+                    if (json.success) { reloadAt(rowId); }
+                    else { alert(json.error || 'Valeur invalide.'); reloadAt(rowId); }
+                }).catch(function () { reloadAt(rowId); });
+            }
+
+            function resetCorrection(key, field, btn) {
+                var rowId = rowIdOf(btn);
+                fetch('?handler=ResetCorrection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': csrfToken },
+                    body: JSON.stringify({ noCmd: key, field: field })
+                }).then(function (r) { return r.json(); }).then(function (json) {
+                    reloadAt(rowId);
+                }).catch(function () { reloadAt(rowId); });
+            }
+
+            function bindResets() {
+                document.querySelectorAll('.reset-corr').forEach(function (btn) {
+                    if (btn.hasAttribute('data-reset-bound')) return;
+                    btn.setAttribute('data-reset-bound', '1');
+                    btn.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        resetCorrection(btn.dataset.resetKey, btn.dataset.resetField, btn);
+                    });
+                });
+            }
+
+            function install() {
+                bindResets();
+            }
+
+            if (window.MutationObserver) {
+                var obs = new MutationObserver(install);
+                obs.observe(document.body, { childList: true, subtree: true });
+            }
+            install();
+        })();
+    </script>
+}
+
+@functions {
+    string GetStatusBadge(string? status)
+    {
+        if (string.IsNullOrEmpty(status)) return "bg-secondary";
+        return status switch
+        {
+            string s when s.StartsWith("V-") => "bg-danger",
+            string s when s.StartsWith("W-") => "bg-warning text-dark",
+            string s when s.StartsWith("X-") => "bg-info text-dark",
+            string s when s.StartsWith("Y-") => "bg-primary",
+            string s when s.StartsWith("Z-") => "bg-secondary",
+            _ => "bg-secondary"
+        };
+    }
+
+    string FormatDate(DateTime? dt)
+    {
+        return dt?.ToString("yyyy-MM-dd") ?? "-";
+    }
+
+    string? Truncate(string? val, int maxLen)
+    {
+        if (string.IsNullOrEmpty(val)) return null;
+        return val.Length > maxLen ? val[..maxLen] + "..." : val;
+    }
+
+    string FormatHours(double? val)
+    {
+        return val.HasValue ? val.Value.ToString("0.##") : "-";
+    }
+
+    string FormatRestant(double? val)
+    {
+        if (!val.HasValue) return "-";
+        if (val.Value == 0) return "0";
+        return val.Value.ToString("0.##");
+    }
+
+    string Cell(QDVapp.Models.ProjetUsine p, string key, string? normal)
+    {
+        return EditCell(p, key, normal);
+    }
+
+    string EditCell(QDVapp.Models.ProjetUsine p, string key, string? normal)
+    {
+        if (!CorrectionFields.Atelier.TryGetValue(key, out var type))
+            return normal ?? "-";
+
+        var encodedKey = HtmlEncoder.Default.Encode(p.NoCmd ?? "");
+        var isBad = p.BadValues.TryGetValue(key, out var bad);
+        var isCorrected = p.CorrectedFields.Contains(key);
+
+        var classes = new List<string> { "edit-cell" };
+        if (isBad) classes.Add("bad-value");
+        if (isCorrected) classes.Add("corrected-cell");
+
+        var display = isBad ? ("⚠ " + bad) : (normal ?? "-");
+        var editValue = isBad ? (bad ?? "") : (normal ?? "");
+        var title = isBad
+            ? $"Valeur invalide pour « {key} » : « {bad} » — cliquer pour corriger"
+            : (isCorrected ? "Valeur corrigée — cliquer pour modifier" : $"Cliquer pour modifier « {key} »");
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<span class=\"{string.Join(' ', classes)}\" data-edit-field=\"{key}\" data-edit-key=\"{encodedKey}\" data-edit-value=\"{HtmlEncoder.Default.Encode(editValue)}\" title=\"{HtmlEncoder.Default.Encode(title)}\">");
+        sb.Append(HtmlEncoder.Default.Encode(display));
+        sb.Append("</span>");
+        if (isCorrected)
+            sb.Append($"<button type=\"button\" class=\"reset-corr\" data-reset-key=\"{encodedKey}\" data-reset-field=\"{key}\" title=\"Réinitialiser la correction\">&#8635;</button>");
+        return sb.ToString();
+    }
+
+    string FormatPct(double? val)
+    {
+        if (!val.HasValue) return "-";
+        return (val.Value * 100).ToString("0.##") + "%";
+    }
+
+    string FormatPctDiff(string? val)
+    {
+        if (string.IsNullOrEmpty(val) || val == "Erreur") return val ?? "-";
+        if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+            return (num * 100).ToString("0.##") + "%";
+        return val;
+    }
+
+    string GetDiffClass(string? val)
+    {
+        if (string.IsNullOrEmpty(val) || val == "Erreur") return "";
+        if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+        {
+            if (num < 0) return "text-danger fw-semibold";
+            if (num > 0) return "text-success fw-semibold";
+        }
+        return "";
+    }
+
+    string GetPctDiffClass(string? val)
+    {
+        if (string.IsNullOrEmpty(val) || val == "Erreur") return "";
+        if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+        {
+            if (num < -0.2) return "text-danger fw-semibold";
+            if (num > 0.2) return "text-success fw-semibold";
+            if (num < 0) return "text-warning";
+        }
+        return "";
+    }
+}

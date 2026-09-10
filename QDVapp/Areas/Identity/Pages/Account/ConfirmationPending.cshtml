@@ -1,0 +1,18 @@
+@page
+@model QDVapp.Areas.Identity.Pages.Account.ConfirmationPendingModel
+@{
+    ViewData["Title"] = "Vérifiez votre courriel";
+}
+
+<div class="text-center">
+    <h2>Vérifiez votre courriel</h2>
+    <hr />
+    <p class="lead">
+        Nous avons envoyé un lien de vérification à votre adresse courriel.<br />
+        Veuillez cliquer sur le lien dans le courriel pour confirmer votre compte.
+    </p>
+    <p class="text-muted">
+        Vous n'avez pas reçu le courriel? Vérifiez vos courriers indésirables, ou
+        <a asp-area="Identity" asp-page="/Account/Register">essayez de vous inscrire à nouveau</a>.
+    </p>
+</div>

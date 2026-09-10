@@ -1,0 +1,155 @@
+@page
+@model GanttModel
+@{
+    ViewData["Title"] = "Gantt";
+    var rangeStart = Model.RangeStart;
+    var totalDays = (Model.RangeEnd - rangeStart).Days;
+    double Pct(DateTime d) => totalDays > 0 ? Math.Round((d - rangeStart).Days / (double)totalDays * 100, 2) : 0;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0">Diagramme de Gantt — Projets</h4>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="input-group input-group-sm" style="width:200px">
+            <span class="input-group-text">&#128269;</span>
+            <input type="text" class="form-control" id="ganttSearch" placeholder="Rechercher...">
+        </div>
+        <select class="form-select form-select-sm" id="ganttGroupBy" style="width:auto">
+            <option value="">Pas de regroupement</option>
+            <option value="statut">Grouper par statut</option>
+            <option value="vendeur">Grouper par vendeur</option>
+        </select>
+        <select class="form-select form-select-sm" id="ganttZoom" style="width:auto">
+            <option value="day">Jour</option>
+            <option value="week" selected>Semaine</option>
+            <option value="month">Mois</option>
+        </select>
+        <form method="get" class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 small">Étendue :</label>
+            <div class="btn-group btn-group-sm" role="group">
+                <a href="?weeks=4" class="btn btn-outline-secondary @(Model.VisibleWeeks == 4 ? "active" : "")">4 sem.</a>
+                <a href="?weeks=8" class="btn btn-outline-secondary @(Model.VisibleWeeks == 8 ? "active" : "")">8 sem.</a>
+                <a href="?weeks=12" class="btn btn-outline-secondary @(Model.VisibleWeeks == 12 ? "active" : "")">12 sem.</a>
+                <a href="?weeks=0" class="btn btn-outline-secondary @(Model.VisibleWeeks == 0 && Model.RangeEnd == default(DateTime) ? "active" : "")">Tout</a>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+                <input type="date" name="from" class="form-control form-control-sm" value="@Model.RangeStart.ToString("yyyy-MM-dd")" style="width:140px"/>
+                <span class="text-muted">—</span>
+                <input type="date" name="to" class="form-control form-control-sm" value="@Model.RangeEnd.ToString("yyyy-MM-dd")" style="width:140px"/>
+                <button type="submit" class="btn btn-sm btn-primary">OK</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="gantt-legend mb-2">
+    <span class="gantt-legend-item"><span class="gantt-legend-dot" style="background:#dc3545"></span> En retard</span>
+    <span class="gantt-legend-item"><span class="gantt-legend-dot" style="background:#ffc107"></span> &le; 14 jours</span>
+    <span class="gantt-legend-item"><span class="gantt-legend-dot" style="background:#198754"></span> 21+ jours</span>
+    <span class="gantt-legend-item ms-2"><span class="gantt-today-dot"></span> Aujourd'hui</span>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+else if (Model.Items.Count == 0)
+{
+    <div class="alert alert-info">Aucun projet avec date requise.</div>
+}
+else
+{
+    <div class="gantt-container" id="ganttContainer" data-total-days="@totalDays">
+        <div class="gantt-side" id="ganttSide">
+            <div class="gantt-header-row">
+                <div class="gantt-cell gantt-cell-sm">No Projet</div>
+                <div class="gantt-cell gantt-cell-sm">Réf OF</div>
+                <div class="gantt-cell gantt-cell-sm">Statut</div>
+                <div class="gantt-cell gantt-cell-lg">Description</div>
+                <div class="gantt-cell gantt-cell-sm">Date requise</div>
+                <div class="gantt-cell gantt-cell-sm">Restant</div>
+            </div>
+            <div class="gantt-rows" id="ganttSideRows">
+                @{ var rowIndex = 0; }
+                @foreach (var item in Model.Items)
+                {
+                    var progPct = (item.Planifie.HasValue && item.Planifie > 0 && item.Fait.HasValue)
+                        ? Math.Min(100, Math.Round(item.Fait.Value / item.Planifie.Value * 100))
+                        : (double?)null;
+                    var tooltip = $"{item.NoCmd} — {item.Description}\nVendeur: {item.Vendeur}\nPlanifié: {FormatH(item.Planifie)} h | Fait: {FormatH(item.Fait)} h | Restant: {FormatH(item.Restant)} h\nDate requise: {item.DateRequise:yyyy-MM-dd}";
+                    <div class="gantt-row gantt-data-row" data-idx="@rowIndex"
+                         data-no="@item.NoCmd" data-ref="@item.RefOF" data-statut="@item.Statut" data-vendeur="@item.Vendeur"
+                         data-search="@((item.NoCmd + " " + item.RefOF + " " + item.Description + " " + item.Vendeur).ToLowerInvariant())"
+                         title="@tooltip">
+                        <div class="gantt-cell gantt-cell-sm" title="@item.NoCmd">@item.NoCmd</div>
+                        <div class="gantt-cell gantt-cell-sm" title="@item.RefOF">@item.RefOF</div>
+                        <div class="gantt-cell gantt-cell-sm"><span class="badge status-badge @(GetBadge(item.Statut))">@item.Statut</span></div>
+                        <div class="gantt-cell gantt-cell-lg text-truncate" title="@item.Description">@item.Description</div>
+                        <div class="gantt-cell gantt-cell-sm">@item.DateRequise.ToString("yyyy-MM-dd")</div>
+                        <div class="gantt-cell gantt-cell-sm">@(item.Restant?.ToString("0.##") ?? "-")</div>
+                    </div>
+                    rowIndex++;
+                }
+            </div>
+        </div>
+        <div class="gantt-timeline" id="ganttTimeline">
+            <div class="gantt-header-row gantt-header-sticky" id="ganttTimelineHeader" style="width:@(totalDays * 3)px;min-width:100%">
+                @{
+                    var weekStart = new DateTime(rangeStart.Year, rangeStart.Month, 1);
+                    var dow = (int)rangeStart.DayOfWeek;
+                    weekStart = rangeStart.AddDays(-(dow == 0 ? 6 : dow - 1));
+                    for (var w = weekStart; w <= Model.RangeEnd; w = w.AddDays(7))
+                    {
+                        <div class="gantt-week-header" style="left:@(Pct(w) + "%")" title="@w.ToString("yyyy-MM-dd")">
+                            <span>@w.ToString("d MMM")</span>
+                        </div>
+                    }
+                }
+                <div class="gantt-today-line" style="left:@(Pct(Model.Today))%"></div>
+            </div>
+            <div class="gantt-rows" id="ganttTimelineRows" style="width:@(totalDays * 3)px;min-width:100%">
+                @{ var barIndex = 0; }
+                @foreach (var item in Model.Items)
+                {
+                    var barLeft = Pct(item.DateRequise < Model.Today ? item.DateRequise : Model.Today);
+                    var barRight = Pct(item.DateRequise >= Model.Today ? item.DateRequise : Model.Today);
+                    var barWidth = barRight - barLeft;
+                    var isLate = item.DateRequise < Model.Today;
+                    var barClass = isLate ? "gantt-bar-late" : (item.DateRequise <= Model.Today.AddDays(14) ? "gantt-bar-warn" : "gantt-bar-ok");
+                    var daysLeft = (item.DateRequise - Model.Today).Days;
+                    var progressPct = (item.Planifie.HasValue && item.Planifie > 0 && item.Fait.HasValue)
+                        ? Math.Min(100, Math.Round(item.Fait.Value / item.Planifie.Value * 100))
+                        : 0;
+                    var tooltip = $"{item.NoCmd} — {item.Description}\nVendeur: {item.Vendeur}\nPlanifié: {FormatH(item.Planifie)} h | Fait: {FormatH(item.Fait)} h | Restant: {FormatH(item.Restant)} h\nDate requise: {item.DateRequise:yyyy-MM-dd} ({daysLeft} j)";
+                    <div class="gantt-row gantt-data-row" data-idx="@barIndex"
+                         title="@tooltip">
+                        <div class="gantt-bar @barClass" style="left:@(barLeft)%;width:@(Math.Max(barWidth, 0.5))%">
+                            @if (progressPct > 0)
+                            {
+                                <div class="gantt-bar-progress" style="width:@(progressPct)%"></div>
+                            }
+                        </div>
+                    </div>
+                    barIndex++;
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@functions {
+    string GetBadge(string statut)
+    {
+        return statut switch
+        {
+            "V-" => "bg-danger",
+            "W-" => "bg-warning text-dark",
+            "X-" => "bg-info text-dark",
+            "Y-" => "bg-primary",
+            "Z-" => "bg-secondary",
+            _ => "bg-light text-dark"
+        };
+    }
+
+    string FormatH(double? v) => v.HasValue ? v.Value.ToString("0.##") : "-";
+}
