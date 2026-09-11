@@ -24,7 +24,7 @@ public class Program
 
         builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
         {
-            options.SignIn.RequireConfirmedAccount = true;
+            options.SignIn.RequireConfirmedAccount = false;
             options.User.AllowedUserNameCharacters += "é ";
         })
             .AddEntityFrameworkStores<ApplicationDbContext>();
