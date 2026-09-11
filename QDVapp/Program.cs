@@ -45,7 +45,15 @@ public class Program
         using (var scope = app.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            db.Database.Migrate();
+            try
+            {
+                db.Database.Migrate();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Unable to connect to the database. Connection string used (password masked): {Mask(connectionString)}", ex);
+            }
         }
 
         if (app.Environment.IsDevelopment())
@@ -93,28 +101,71 @@ public class Program
 
     private static string NormalizeConnectionString(string cs)
     {
-        if (!cs.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
-            !cs.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
-            return cs;
+        cs = cs.Trim().Trim('"', '\'').Replace("\r", "").Replace("\n", "");
 
-        var uri = new Uri(cs);
-        var userInfo = uri.UserInfo.Split(':', 2);
-        var parts = new List<string>
+        if (cs.Contains("://"))
         {
-            $"Host={uri.Host}",
-            $"Port={(uri.Port > 0 ? uri.Port : 5432)}",
-            $"Database={uri.AbsolutePath.TrimStart('/')}",
-            $"Username={Uri.UnescapeDataString(userInfo[0])}",
-            $"Password={Uri.UnescapeDataString(userInfo[1])}"
-        };
+            var uri = new Uri(cs);
+            var userInfo = uri.UserInfo.Split(':', 2);
+            var parts = new List<string>
+            {
+                $"Host={uri.Host}",
+                $"Port={(uri.Port > 0 ? uri.Port : 5432)}",
+                $"Database={uri.AbsolutePath.TrimStart('/')}",
+                $"Username={Uri.UnescapeDataString(userInfo[0])}",
+                $"Password={Uri.UnescapeDataString(userInfo[1])}"
+            };
 
-        foreach (var q in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var kv = q.Split('=', 2);
-            if (kv[0].Equals("sslmode", StringComparison.OrdinalIgnoreCase))
-                parts.Add($"SSL Mode={kv[1]}");
+            foreach (var q in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = q.Split('=', 2);
+                if (kv[0].Equals("sslmode", StringComparison.OrdinalIgnoreCase))
+                    parts.Add($"SSL Mode={kv[1]}");
+            }
+
+            return string.Join(";", parts);
         }
 
-        return string.Join(";", parts);
+        var canonical = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["host"] = "Host",
+            ["server"] = "Host",
+            ["data source"] = "Host",
+            ["datasource"] = "Host",
+            ["addr"] = "Host",
+            ["address"] = "Host",
+            ["port"] = "Port",
+            ["db"] = "Database",
+            ["database"] = "Database",
+            ["initial catalog"] = "Database",
+            ["username"] = "Username",
+            ["user"] = "Username",
+            ["user id"] = "Username",
+            ["uid"] = "Username",
+            ["password"] = "Password",
+            ["pwd"] = "Password",
+            ["ssl mode"] = "SSL Mode",
+            ["sslmode"] = "SSL Mode"
+        };
+
+        var outParts = new List<string>();
+        foreach (var token in cs.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = token.Split('=', 2);
+            if (kv.Length != 2) { outParts.Add(token); continue; }
+            var key = kv[0].Trim();
+            var value = kv[1].Trim();
+            outParts.Add(canonical.TryGetValue(key, out var mapped)
+                ? $"{mapped}={value}"
+                : token);
+        }
+
+        return string.Join(";", outParts);
+    }
+
+    private static string Mask(string cs)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            cs, @"(Password=)([^;]*)|(://[^:@/]*:)([^@/]*)", "$1$3*****");
     }
 }
