@@ -1,15 +1,18 @@
 using System.Text.Json;
 using ClosedXML.Excel;
+using Microsoft.EntityFrameworkCore;
+using QDVapp.Data;
+using QDVapp.Models;
 
 namespace QDVapp.Services;
 
 public class ExcelUploadService
 {
-    private readonly IWebHostEnvironment _env;
+    private readonly ApplicationDbContext _db;
 
-    public ExcelUploadService(IWebHostEnvironment env)
+    public ExcelUploadService(ApplicationDbContext db)
     {
-        _env = env;
+        _db = db;
     }
 
     private static readonly JsonSerializerOptions ReportJsonOptions = new()
@@ -42,10 +45,10 @@ public class ExcelUploadService
         public bool HasIssues => Issues.Count > 0;
     }
 
-    /// <summary>Saves the uploaded file and returns a compliance report.</summary>
+    /// <summary>Stores the uploaded file for the user in the database and returns a compliance report.</summary>
     /// <param name="requiredSheet">The worksheet the app expects for this file type, if any.</param>
-    public (bool Success, string? Error, UploadReport? Report) SaveFileWithReport(
-        IFormFile file, string targetFolder, string targetFileName, string? requiredSheet)
+    public async Task<(bool Success, string? Error, UploadReport? Report)> SaveFileForUserAsync(
+        IFormFile file, string userId, string page, string? requiredSheet)
     {
         var report = new UploadReport();
 
@@ -110,14 +113,37 @@ public class ExcelUploadService
         if (report.IsEmpty)
             return (false, "Le fichier Excel est vide. Il n'a pas été enregistré.", report);
 
-        var destDir = Path.Combine(_env.WebRootPath, "files", targetFolder);
-        Directory.CreateDirectory(destDir);
-        var destPath = Path.Combine(destDir, targetFileName);
+        byte[] data;
+        using (var ms = new MemoryStream())
+        {
+            await file.CopyToAsync(ms);
+            data = ms.ToArray();
+        }
 
         try
         {
-            using var stream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            file.CopyTo(stream);
+            var existing = await _db.UploadedExcels
+                .FirstOrDefaultAsync(f => f.UserId == userId && f.Page == page);
+
+            if (existing is null)
+            {
+                _db.UploadedExcels.Add(new UploadedExcel
+                {
+                    UserId = userId,
+                    Page = page,
+                    FileName = file.FileName,
+                    Data = data,
+                    UploadedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                existing.FileName = file.FileName;
+                existing.Data = data;
+                existing.UploadedAt = DateTime.UtcNow;
+            }
+
+            await _db.SaveChangesAsync();
         }
         catch (Exception ex)
         {
@@ -126,6 +152,14 @@ public class ExcelUploadService
 
         return (true, null, report);
     }
+
+    /// <summary>Returns a user's stored workbook for a page, or null if none has been uploaded.</summary>
+    public async Task<byte[]?> GetBytesAsync(string userId, string page)
+        => await _db.UploadedExcels
+            .AsNoTracking()
+            .Where(f => f.UserId == userId && f.Page == page)
+            .Select(f => f.Data)
+            .FirstOrDefaultAsync();
 
     private static bool IsRowAllEmpty(IXLRangeRow row)
     {

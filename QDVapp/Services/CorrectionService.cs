@@ -125,10 +125,10 @@ public class CorrectionService
         return raw;
     }
 
-    public async Task<ProjectCorrection?> UpsertAsync(string page, string projectKey, string field, string value)
+    public async Task<ProjectCorrection?> UpsertAsync(string userId, string page, string projectKey, string field, string value)
     {
         var existing = await _db.Corrections
-            .FirstOrDefaultAsync(c => c.Page == page && c.ProjectKey == projectKey && c.Field == field);
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.Page == page && c.ProjectKey == projectKey && c.Field == field);
 
         if (existing is not null)
         {
@@ -136,7 +136,7 @@ public class CorrectionService
         }
         else
         {
-            existing = new ProjectCorrection { Page = page, ProjectKey = projectKey, Field = field, Value = value };
+            existing = new ProjectCorrection { UserId = userId, Page = page, ProjectKey = projectKey, Field = field, Value = value };
             _db.Corrections.Add(existing);
         }
 
@@ -144,10 +144,10 @@ public class CorrectionService
         return existing;
     }
 
-    public async Task RemoveAsync(string page, string projectKey, string field)
+    public async Task RemoveAsync(string userId, string page, string projectKey, string field)
     {
         var existing = await _db.Corrections
-            .FirstOrDefaultAsync(c => c.Page == page && c.ProjectKey == projectKey && c.Field == field);
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.Page == page && c.ProjectKey == projectKey && c.Field == field);
         if (existing is not null)
         {
             _db.Corrections.Remove(existing);
@@ -155,8 +155,8 @@ public class CorrectionService
         }
     }
 
-    public async Task<List<ProjectCorrection>> GetAllAsync(string page)
-        => await _db.Corrections.AsNoTracking().Where(c => c.Page == page).ToListAsync();
+    public async Task<List<ProjectCorrection>> GetAllAsync(string userId, string page)
+        => await _db.Corrections.AsNoTracking().Where(c => c.UserId == userId && c.Page == page).ToListAsync();
 
     public void ApplyAtelier(IEnumerable<ProjetUsine> projets, IEnumerable<ProjectCorrection> corrections)
     {

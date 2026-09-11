@@ -4,25 +4,26 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using QDVapp.Data;
 using QDVapp.Models;
 using QDVapp.Services;
+using System.Security.Claims;
 
 namespace QDVapp.Pages;
 
 public class AtelierProjetsModel : PageModel
 {
-    private readonly IWebHostEnvironment _env;
     private readonly ApplicationDbContext _db;
     private readonly ExcelUploadService _uploadService;
     private readonly CorrectionService _correctionService;
     private readonly CorrectedExcelExportService _excelExport;
 
-    public AtelierProjetsModel(IWebHostEnvironment env, ApplicationDbContext db, ExcelUploadService uploadService, CorrectionService correctionService, CorrectedExcelExportService excelExport)
+    public AtelierProjetsModel(ApplicationDbContext db, ExcelUploadService uploadService, CorrectionService correctionService, CorrectedExcelExportService excelExport)
     {
-        _env = env;
         _db = db;
         _uploadService = uploadService;
         _correctionService = correctionService;
         _excelExport = excelExport;
     }
+
+    private string CurrentUserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
     public List<ProjetUsine> Projets { get; set; } = [];
     public List<SkippedRow> SkippedRows { get; set; } = [];
@@ -41,9 +42,9 @@ public class AtelierProjetsModel : PageModel
         ErrorMessage = TempData["ProjectError"] as string;
         UploadReport = ExcelUploadService.DecodeReport(TempData[ExcelUploadService.TempDataReportKey] as string);
 
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AtelierProjetsUsine", "Atelier - Liste des projets dans usine (1).xlsx");
-
-        if (!System.IO.File.Exists(filePath))
+        var userId = CurrentUserId;
+        var bytes = await _uploadService.GetBytesAsync(userId, CorrectionFields.PageAtelier);
+        if (bytes is null)
         {
             ErrorMessage = "Fichier Excel introuvable.";
             return;
@@ -51,7 +52,8 @@ public class AtelierProjetsModel : PageModel
 
         try
         {
-            using var workbook = new XLWorkbook(filePath);
+            using var stream = new MemoryStream(bytes);
+            using var workbook = new XLWorkbook(stream);
             var ws = workbook.Worksheet("Liste des projets");
             var range = ws.RangeUsed();
             if (range is null)
@@ -99,7 +101,7 @@ public class AtelierProjetsModel : PageModel
                 list.Add(proj);
             }
 
-            var corrections = await _correctionService.GetAllAsync(CorrectionFields.PageAtelier);
+            var corrections = await _correctionService.GetAllAsync(userId, CorrectionFields.PageAtelier);
             _correctionService.ApplyAtelier(list, corrections);
 
             Projets = list;
@@ -111,7 +113,7 @@ public class AtelierProjetsModel : PageModel
             ErrorMessage = $"Erreur de lecture du fichier: {ex.Message}";
         }
 
-        var manual = _db.Projets.OrderBy(p => p.NoCmd).ToList();
+        var manual = _db.Projets.Where(p => p.UserId == userId).OrderBy(p => p.NoCmd).ToList();
         Projets.AddRange(manual);
         TotalCount += manual.Count;
 
@@ -125,12 +127,14 @@ public class AtelierProjetsModel : PageModel
         }
     }
 
-    public IActionResult OnGetExportCorrected()
+    public async Task<IActionResult> OnGetExportCorrected()
     {
-        var bytes = _excelExport.ExportProjectsCorrected();
-        if (bytes is null)
+        var userId = CurrentUserId;
+        var bytes = await _uploadService.GetBytesAsync(userId, CorrectionFields.PageAtelier);
+        var output = await _excelExport.ExportProjectsCorrectedAsync(bytes, userId);
+        if (output is null)
             return NotFound("Fichier source des projets introuvable.");
-        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Atelier - Liste des projets (corrigé).xlsx");
+        return File(output, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Atelier - Liste des projets (corrigé).xlsx");
     }
 
     public IActionResult OnPostCreate()
@@ -141,9 +145,15 @@ public class AtelierProjetsModel : PageModel
             return RedirectToPage();
         }
 
-        var existing = _db.Projets.FirstOrDefault(p => p.Id == Input.Id);
+        var existing = _db.Projets.FirstOrDefault(p => p.Id == Input.Id && p.UserId == CurrentUserId);
+        var target = existing;
         var isEdit = existing is not null;
-        var target = existing ?? new ProjetUsine { Id = Guid.NewGuid().ToString("N"), Manuel = true };
+        if (target is null && !string.IsNullOrWhiteSpace(Input.Id))
+        {
+            TempData["ProjectError"] = "Projet introuvable ou déjà supprimé.";
+            return RedirectToPage();
+        }
+        target ??= new ProjetUsine { Id = Guid.NewGuid().ToString("N"), UserId = CurrentUserId, Manuel = true };
 
         ApplyInput(target);
 
@@ -159,6 +169,8 @@ public class AtelierProjetsModel : PageModel
         if (string.IsNullOrWhiteSpace(input?.ProjectKey))
             return new JsonResult(new { success = false, error = "Référence de projet manquante." }) { StatusCode = 400 };
 
+        var userId = CurrentUserId;
+
         foreach (var fv in input.Fields ?? [])
         {
             if (string.IsNullOrWhiteSpace(fv?.Field)) continue;
@@ -166,7 +178,7 @@ public class AtelierProjetsModel : PageModel
             // Empty value => revert to the Excel/original value (remove the correction).
             if (string.IsNullOrWhiteSpace(fv.Value))
             {
-                await _correctionService.RemoveAsync(CorrectionFields.PageAtelier, input.ProjectKey.Trim(), fv.Field);
+                await _correctionService.RemoveAsync(userId, CorrectionFields.PageAtelier, input.ProjectKey.Trim(), fv.Field);
                 continue;
             }
 
@@ -174,7 +186,7 @@ public class AtelierProjetsModel : PageModel
             if (error is not null)
                 return new JsonResult(new { success = false, error = $"Champ « {fv.Field} » : {error}" }) { StatusCode = 400 };
 
-            await _correctionService.UpsertAsync(CorrectionFields.PageAtelier, input.ProjectKey.Trim(), fv.Field, normalized);
+            await _correctionService.UpsertAsync(userId, CorrectionFields.PageAtelier, input.ProjectKey.Trim(), fv.Field, normalized);
         }
 
         return new JsonResult(new { success = true });
@@ -218,7 +230,7 @@ public class AtelierProjetsModel : PageModel
 
     public IActionResult OnPostDelete([FromForm] string id)
     {
-        var project = _db.Projets.FirstOrDefault(p => p.Id == id);
+        var project = _db.Projets.FirstOrDefault(p => p.Id == id && p.UserId == CurrentUserId);
         if (project is not null)
         {
             _db.Projets.Remove(project);
@@ -232,12 +244,12 @@ public class AtelierProjetsModel : PageModel
         return RedirectToPage();
     }
 
-    public JsonResult OnPostUploadAtelier(IFormFile file)
+    public async Task<JsonResult> OnPostUploadAtelier(IFormFile file)
     {
-        var (success, error, report) = _uploadService.SaveFileWithReport(
+        var (success, error, report) = await _uploadService.SaveFileForUserAsync(
             file,
-            "AtelierProjetsUsine",
-            "Atelier - Liste des projets dans usine (1).xlsx",
+            CurrentUserId,
+            CorrectionFields.PageAtelier,
             "Liste des projets");
 
         if (!success)
@@ -258,7 +270,7 @@ public class AtelierProjetsModel : PageModel
         if (error is not null)
             return new JsonResult(new { success = false, error }) { StatusCode = 400 };
 
-        await _correctionService.UpsertAsync(CorrectionFields.PageAtelier, input.NoCmd.Trim(), input.Field, normalized);
+        await _correctionService.UpsertAsync(CurrentUserId, CorrectionFields.PageAtelier, input.NoCmd.Trim(), input.Field, normalized);
         return new JsonResult(new { success = true, field = input.Field, value = normalized });
     }
 
@@ -267,7 +279,7 @@ public class AtelierProjetsModel : PageModel
         if (string.IsNullOrWhiteSpace(input?.NoCmd) || string.IsNullOrWhiteSpace(input?.Field))
             return new JsonResult(new { success = false, error = "Référence manquante." }) { StatusCode = 400 };
 
-        await _correctionService.RemoveAsync(CorrectionFields.PageAtelier, input.NoCmd.Trim(), input.Field);
+        await _correctionService.RemoveAsync(CurrentUserId, CorrectionFields.PageAtelier, input.NoCmd.Trim(), input.Field);
         return new JsonResult(new { success = true });
     }
 

@@ -3,20 +3,21 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using QDVapp.Models;
 using QDVapp.Services;
+using System.Security.Claims;
 using System.Text.Json;
 
 namespace QDVapp.Pages;
 
 public class IndexModel : PageModel
 {
-    private readonly IWebHostEnvironment _env;
     private readonly ExcelUploadService _uploadService;
 
-    public IndexModel(IWebHostEnvironment env, ExcelUploadService uploadService)
+    public IndexModel(ExcelUploadService uploadService)
     {
-        _env = env;
         _uploadService = uploadService;
     }
+
+    private string CurrentUserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
     public int TotalProjets { get; set; }
     public int ProjetsEnRetard { get; set; }
@@ -30,13 +31,12 @@ public class IndexModel : PageModel
     public string VendeurLabelsJson { get; set; } = "[]";
     public string VendeurHoursJson { get; set; } = "[]";
 
-    public void OnGet()
+    public async Task OnGetAsync()
     {
         UploadReport = ExcelUploadService.DecodeReport(TempData[ExcelUploadService.TempDataReportKey] as string);
 
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AtelierProjetsUsine", "Atelier - Liste des projets dans usine (1).xlsx");
-
-        if (!System.IO.File.Exists(filePath))
+        var bytes = await _uploadService.GetBytesAsync(CurrentUserId, CorrectionFields.PageAtelier);
+        if (bytes is null)
         {
             ErrorMessage = "Fichier Excel introuvable.";
             return;
@@ -44,7 +44,8 @@ public class IndexModel : PageModel
 
         try
         {
-            using var workbook = new XLWorkbook(filePath);
+            using var stream = new MemoryStream(bytes);
+            using var workbook = new XLWorkbook(stream);
             var ws = workbook.Worksheet("Liste des projets");
             var range = ws.RangeUsed();
             if (range is null) return;
@@ -97,12 +98,12 @@ public class IndexModel : PageModel
         }
     }
 
-    public JsonResult OnPostUploadAtelier(IFormFile file)
+    public async Task<JsonResult> OnPostUploadAtelier(IFormFile file)
     {
-        var (success, error, report) = _uploadService.SaveFileWithReport(
+        var (success, error, report) = await _uploadService.SaveFileForUserAsync(
             file,
-            "AtelierProjetsUsine",
-            "Atelier - Liste des projets dans usine (1).xlsx",
+            CurrentUserId,
+            CorrectionFields.PageAtelier,
             "Liste des projets");
 
         if (!success)
@@ -114,12 +115,12 @@ public class IndexModel : PageModel
         return new JsonResult(new { success = true });
     }
 
-    public JsonResult OnPostUploadAvancement(IFormFile file)
+    public async Task<JsonResult> OnPostUploadAvancement(IFormFile file)
     {
-        var (success, error, report) = _uploadService.SaveFileWithReport(
+        var (success, error, report) = await _uploadService.SaveFileForUserAsync(
             file,
-            "AvancementOF",
-            "Avancement des OF - Heures à faire.xlsx",
+            CurrentUserId,
+            CorrectionFields.PageAvancement,
             "Liste des heures à faire");
 
         if (!success)

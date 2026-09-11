@@ -7,6 +7,7 @@ public class ProjetUsine
 {
     [Key]
     public string Id { get; set; } = string.Empty;
+    public string UserId { get; set; } = "";
     public string? Statut { get; set; }
     public string? NoCmd { get; set; }
     public string? RefOF { get; set; }

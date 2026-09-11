@@ -10,7 +10,7 @@ services:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
       - key: ConnectionStrings__DefaultConnection
-        value: Data Source=qdvapp.db
+        sync: false
       - key: Smtp__Host
         value: smtp.gmail.com
       - key: Smtp__Port

@@ -4,25 +4,26 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using QDVapp.Data;
 using QDVapp.Models;
 using QDVapp.Services;
+using System.Security.Claims;
 
 namespace QDVapp.Pages;
 
 public class AvancementOFModel : PageModel
 {
-    private readonly IWebHostEnvironment _env;
     private readonly ExcelUploadService _uploadService;
     private readonly CorrectionService _correctionService;
     private readonly ApplicationDbContext _db;
     private readonly CorrectedExcelExportService _excelExport;
 
-    public AvancementOFModel(IWebHostEnvironment env, ExcelUploadService uploadService, CorrectionService correctionService, ApplicationDbContext db, CorrectedExcelExportService excelExport)
+    public AvancementOFModel(ExcelUploadService uploadService, CorrectionService correctionService, ApplicationDbContext db, CorrectedExcelExportService excelExport)
     {
-        _env = env;
         _uploadService = uploadService;
         _correctionService = correctionService;
         _db = db;
         _excelExport = excelExport;
     }
+
+    private string CurrentUserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
     public List<AvancementOF> Ordres { get; set; } = [];
     public List<SkippedRow> SkippedRows { get; set; } = [];
@@ -41,9 +42,9 @@ public class AvancementOFModel : PageModel
         ErrorMessage = TempData["OFError"] as string;
         UploadReport = ExcelUploadService.DecodeReport(TempData[ExcelUploadService.TempDataReportKey] as string);
 
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AvancementOF", "Avancement des OF - Heures à faire.xlsx");
-
-        if (!System.IO.File.Exists(filePath))
+        var userId = CurrentUserId;
+        var bytes = await _uploadService.GetBytesAsync(userId, CorrectionFields.PageAvancement);
+        if (bytes is null)
         {
             ErrorMessage = "Fichier Excel introuvable.";
             return;
@@ -51,7 +52,8 @@ public class AvancementOFModel : PageModel
 
         try
         {
-            using var workbook = new XLWorkbook(filePath);
+            using var stream = new MemoryStream(bytes);
+            using var workbook = new XLWorkbook(stream);
             var ws = workbook.Worksheet(1);
             var range = ws.RangeUsed();
             if (range is null)
@@ -119,7 +121,7 @@ public class AvancementOFModel : PageModel
                 list.Add(ordre);
             }
 
-            var corrections = await _correctionService.GetAllAsync(CorrectionFields.PageAvancement);
+            var corrections = await _correctionService.GetAllAsync(userId, CorrectionFields.PageAvancement);
             _correctionService.ApplyAvancement(list, corrections);
 
             Ordres = list;
@@ -131,7 +133,7 @@ public class AvancementOFModel : PageModel
             ErrorMessage = $"Erreur de lecture du fichier: {ex.Message}";
         }
 
-        var manual = _db.ManuelOFs.OrderBy(m => m.Projet).ThenBy(m => m.RefOF).ToList();
+        var manual = _db.ManuelOFs.Where(m => m.UserId == userId).OrderBy(m => m.Projet).ThenBy(m => m.RefOF).ToList();
         foreach (var m in manual)
         {
             Ordres.Add(ToAvancement(m));
@@ -148,12 +150,14 @@ public class AvancementOFModel : PageModel
         }
     }
 
-    public IActionResult OnGetExportCorrected()
+    public async Task<IActionResult> OnGetExportCorrected()
     {
-        var bytes = _excelExport.ExportOfsCorrected();
-        if (bytes is null)
+        var userId = CurrentUserId;
+        var bytes = await _uploadService.GetBytesAsync(userId, CorrectionFields.PageAvancement);
+        var output = await _excelExport.ExportOfsCorrectedAsync(bytes, userId);
+        if (output is null)
             return NotFound("Fichier source des OF introuvable.");
-        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Avancement des OF - Heures à faire (corrigé).xlsx");
+        return File(output, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Avancement des OF - Heures à faire (corrigé).xlsx");
     }
 
     public IActionResult OnPostCreate()
@@ -164,9 +168,15 @@ public class AvancementOFModel : PageModel
             return RedirectToPage();
         }
 
-        var existing = _db.ManuelOFs.FirstOrDefault(m => m.Id == Input.Id);
+        var existing = _db.ManuelOFs.FirstOrDefault(m => m.Id == Input.Id && m.UserId == CurrentUserId);
+        var target = existing;
         var isEdit = existing is not null;
-        var target = existing ?? new ManuelOF { Id = Guid.NewGuid().ToString("N"), Manuel = true };
+        if (target is null && !string.IsNullOrWhiteSpace(Input.Id))
+        {
+            TempData["OFError"] = "OF introuvable ou déjà supprimé.";
+            return RedirectToPage();
+        }
+        target ??= new ManuelOF { Id = Guid.NewGuid().ToString("N"), UserId = CurrentUserId, Manuel = true };
 
         ApplyInput(target);
 
@@ -179,7 +189,7 @@ public class AvancementOFModel : PageModel
 
     public IActionResult OnPostDelete([FromForm] string id)
     {
-        var of = _db.ManuelOFs.FirstOrDefault(m => m.Id == id);
+        var of = _db.ManuelOFs.FirstOrDefault(m => m.Id == id && m.UserId == CurrentUserId);
         if (of is not null)
         {
             _db.ManuelOFs.Remove(of);
@@ -193,12 +203,12 @@ public class AvancementOFModel : PageModel
         return RedirectToPage();
     }
 
-    public JsonResult OnPostUploadAvancement(IFormFile file)
+    public async Task<JsonResult> OnPostUploadAvancement(IFormFile file)
     {
-        var (success, error, report) = _uploadService.SaveFileWithReport(
+        var (success, error, report) = await _uploadService.SaveFileForUserAsync(
             file,
-            "AvancementOF",
-            "Avancement des OF - Heures à faire.xlsx",
+            CurrentUserId,
+            CorrectionFields.PageAvancement,
             "Liste des heures à faire");
 
         if (!success)
@@ -219,7 +229,7 @@ public class AvancementOFModel : PageModel
         if (error is not null)
             return new JsonResult(new { success = false, error }) { StatusCode = 400 };
 
-        await _correctionService.UpsertAsync(CorrectionFields.PageAvancement, input.Projet.Trim(), input.Field, normalized);
+        await _correctionService.UpsertAsync(CurrentUserId, CorrectionFields.PageAvancement, input.Projet.Trim(), input.Field, normalized);
         return new JsonResult(new { success = true, field = input.Field, value = normalized });
     }
 
@@ -228,6 +238,8 @@ public class AvancementOFModel : PageModel
         if (string.IsNullOrWhiteSpace(input?.ProjectKey))
             return new JsonResult(new { success = false, error = "Référence d'OF manquante." }) { StatusCode = 400 };
 
+        var userId = CurrentUserId;
+
         foreach (var fv in input.Fields ?? [])
         {
             if (string.IsNullOrWhiteSpace(fv?.Field)) continue;
@@ -235,7 +247,7 @@ public class AvancementOFModel : PageModel
             // Empty value => revert to the Excel/original value (remove the correction).
             if (string.IsNullOrWhiteSpace(fv.Value))
             {
-                await _correctionService.RemoveAsync(CorrectionFields.PageAvancement, input.ProjectKey.Trim(), fv.Field);
+                await _correctionService.RemoveAsync(userId, CorrectionFields.PageAvancement, input.ProjectKey.Trim(), fv.Field);
                 continue;
             }
 
@@ -243,7 +255,7 @@ public class AvancementOFModel : PageModel
             if (error is not null)
                 return new JsonResult(new { success = false, error = $"Champ « {fv.Field} » : {error}" }) { StatusCode = 400 };
 
-            await _correctionService.UpsertAsync(CorrectionFields.PageAvancement, input.ProjectKey.Trim(), fv.Field, normalized);
+            await _correctionService.UpsertAsync(userId, CorrectionFields.PageAvancement, input.ProjectKey.Trim(), fv.Field, normalized);
         }
 
         return new JsonResult(new { success = true });
@@ -254,7 +266,7 @@ public class AvancementOFModel : PageModel
         if (string.IsNullOrWhiteSpace(input?.Projet) || string.IsNullOrWhiteSpace(input?.Field))
             return new JsonResult(new { success = false, error = "Référence manquante." }) { StatusCode = 400 };
 
-        await _correctionService.RemoveAsync(CorrectionFields.PageAvancement, input.Projet.Trim(), input.Field);
+        await _correctionService.RemoveAsync(CurrentUserId, CorrectionFields.PageAvancement, input.Projet.Trim(), input.Field);
         return new JsonResult(new { success = true });
     }
 

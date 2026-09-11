@@ -6,24 +6,22 @@ namespace QDVapp.Services;
 
 public class CorrectedExcelExportService
 {
-    private readonly IWebHostEnvironment _env;
     private readonly ApplicationDbContext _db;
     private readonly CorrectionService _correctionService;
 
-    public CorrectedExcelExportService(IWebHostEnvironment env, ApplicationDbContext db, CorrectionService correctionService)
+    public CorrectedExcelExportService(ApplicationDbContext db, CorrectionService correctionService)
     {
-        _env = env;
         _db = db;
         _correctionService = correctionService;
     }
 
-    public byte[]? ExportProjectsCorrected()
+    public async Task<byte[]?> ExportProjectsCorrectedAsync(byte[]? excelBytes, string userId)
     {
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AtelierProjetsUsine", "Atelier - Liste des projets dans usine (1).xlsx");
-        if (!System.IO.File.Exists(filePath)) return null;
+        if (excelBytes is null) return null;
 
         var all = new List<ProjetUsine>();
-        using (var workbook = new XLWorkbook(filePath))
+        using (var source = new MemoryStream(excelBytes))
+        using (var workbook = new XLWorkbook(source))
         {
             var ws = workbook.Worksheet("Liste des projets");
             var range = ws.RangeUsed();
@@ -40,20 +38,20 @@ public class CorrectedExcelExportService
             }
         }
 
-        var corrections = _correctionService.GetAllAsync(CorrectionFields.PageAtelier).GetAwaiter().GetResult();
+        var corrections = await _correctionService.GetAllAsync(userId, CorrectionFields.PageAtelier);
         _correctionService.ApplyAtelier(all, corrections);
-        all.AddRange(_db.Projets);
+        all.AddRange(_db.Projets.Where(p => p.UserId == userId));
 
-        return WriteProjectFile(filePath, all);
+        return WriteProjectFile(excelBytes, all);
     }
 
-    public byte[]? ExportOfsCorrected()
+    public async Task<byte[]?> ExportOfsCorrectedAsync(byte[]? excelBytes, string userId)
     {
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AvancementOF", "Avancement des OF - Heures à faire.xlsx");
-        if (!System.IO.File.Exists(filePath)) return null;
+        if (excelBytes is null) return null;
 
         var all = new List<AvancementOF>();
-        using (var workbook = new XLWorkbook(filePath))
+        using (var source = new MemoryStream(excelBytes))
+        using (var workbook = new XLWorkbook(source))
         {
             var ws = workbook.Worksheet("Liste des heures à faire");
             var range = ws.RangeUsed();
@@ -71,17 +69,18 @@ public class CorrectedExcelExportService
             }
         }
 
-        var corrections = _correctionService.GetAllAsync(CorrectionFields.PageAvancement).GetAwaiter().GetResult();
+        var corrections = await _correctionService.GetAllAsync(userId, CorrectionFields.PageAvancement);
         _correctionService.ApplyAvancement(all, corrections);
-        all.AddRange(_db.ManuelOFs.Select(ToAvancement));
+        all.AddRange(_db.ManuelOFs.Where(m => m.UserId == userId).Select(ToAvancement));
 
-        return WriteOfFile(filePath, all);
+        return WriteOfFile(excelBytes, all);
     }
 
-    private byte[]? WriteProjectFile(string filePath, List<ProjetUsine> projects)
+    private byte[]? WriteProjectFile(byte[] source, List<ProjetUsine> projects)
     {
         byte[] bytes;
-        using (var workbook = new XLWorkbook(filePath))
+        using (var sourceStream = new MemoryStream(source))
+        using (var workbook = new XLWorkbook(sourceStream))
         {
             var ws = workbook.Worksheet("Liste des projets");
             ws.RangeUsed()?.Clear(XLClearOptions.Contents);
@@ -106,10 +105,11 @@ public class CorrectedExcelExportService
         return bytes;
     }
 
-    private byte[]? WriteOfFile(string filePath, List<AvancementOF> ordres)
+    private byte[]? WriteOfFile(byte[] source, List<AvancementOF> ordres)
     {
         byte[] bytes;
-        using (var workbook = new XLWorkbook(filePath))
+        using (var sourceStream = new MemoryStream(source))
+        using (var workbook = new XLWorkbook(sourceStream))
         {
             var ws = workbook.Worksheet("Liste des heures à faire");
             ws.RangeUsed()?.Clear(XLClearOptions.Contents);

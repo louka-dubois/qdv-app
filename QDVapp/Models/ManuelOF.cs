@@ -7,6 +7,7 @@ public class ManuelOF
 {
     [Key]
     public string Id { get; set; } = string.Empty;
+    public string UserId { get; set; } = "";
     public string? Projet { get; set; }
     public string? RefOF { get; set; }
     public string? StatutOF { get; set; }

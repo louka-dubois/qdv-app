@@ -2,17 +2,21 @@ using ClosedXML.Excel;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using QDVapp.Models;
+using QDVapp.Services;
+using System.Security.Claims;
 
 namespace QDVapp.Pages;
 
 public class GanttModel : PageModel
 {
-    private readonly IWebHostEnvironment _env;
+    private readonly ExcelUploadService _uploadService;
 
-    public GanttModel(IWebHostEnvironment env)
+    public GanttModel(ExcelUploadService uploadService)
     {
-        _env = env;
+        _uploadService = uploadService;
     }
+
+    private string CurrentUserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
     public List<GanttItem> Items { get; set; } = [];
     public int TotalCount { get; set; }
@@ -22,7 +26,7 @@ public class GanttModel : PageModel
     public DateTime RangeEnd { get; set; }
     public string? ErrorMessage { get; set; }
 
-    public void OnGet(
+    public async Task OnGetAsync(
         [FromQuery(Name = "from")] DateTime? fromDate,
         [FromQuery(Name = "to")] DateTime? toDate,
         [FromQuery(Name = "weeks")] int weeks = 12)
@@ -46,9 +50,8 @@ public class GanttModel : PageModel
             VisibleWeeks = 0;
         }
 
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AtelierProjetsUsine", "Atelier - Liste des projets dans usine (1).xlsx");
-
-        if (!System.IO.File.Exists(filePath))
+        var bytes = await _uploadService.GetBytesAsync(CurrentUserId, CorrectionFields.PageAtelier);
+        if (bytes is null)
         {
             ErrorMessage = "Fichier Excel introuvable.";
             return;
@@ -56,7 +59,8 @@ public class GanttModel : PageModel
 
         try
         {
-            using var workbook = new XLWorkbook(filePath);
+            using var stream = new MemoryStream(bytes);
+            using var workbook = new XLWorkbook(stream);
             var ws = workbook.Worksheet("Liste des projets");
             var range = ws.RangeUsed();
             if (range is null)

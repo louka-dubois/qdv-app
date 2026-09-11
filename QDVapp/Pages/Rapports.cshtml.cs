@@ -7,22 +7,25 @@ using QDVapp.Services;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using System.Security.Claims;
 using System.Text.Json;
 
 namespace QDVapp.Pages;
 
 public class RapportsModel : PageModel
 {
-    private readonly IWebHostEnvironment _env;
     private readonly ApplicationDbContext _db;
     private readonly CorrectionService _correctionService;
+    private readonly ExcelUploadService _uploadService;
 
-    public RapportsModel(IWebHostEnvironment env, ApplicationDbContext db, CorrectionService correctionService)
+    public RapportsModel(ApplicationDbContext db, CorrectionService correctionService, ExcelUploadService uploadService)
     {
-        _env = env;
         _db = db;
         _correctionService = correctionService;
+        _uploadService = uploadService;
     }
+
+    private string CurrentUserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
     public string Period { get; set; } = "week";
     public DateTime RangeStart { get; set; }
@@ -586,12 +589,14 @@ public class RapportsModel : PageModel
 
     private async Task LoadProjetsAsync()
     {
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AtelierProjetsUsine", "Atelier - Liste des projets dans usine (1).xlsx");
-        if (!System.IO.File.Exists(filePath)) return;
+        var userId = CurrentUserId;
+        var bytes = await _uploadService.GetBytesAsync(userId, CorrectionFields.PageAtelier);
+        if (bytes is null) return;
 
         try
         {
-            using var workbook = new XLWorkbook(filePath);
+            using var stream = new MemoryStream(bytes);
+            using var workbook = new XLWorkbook(stream);
             var ws = workbook.Worksheet("Liste des projets");
             var range = ws.RangeUsed();
             if (range is null) return;
@@ -624,10 +629,10 @@ public class RapportsModel : PageModel
                 all.Add(proj);
             }
 
-            var corrections = await _correctionService.GetAllAsync(CorrectionFields.PageAtelier);
+            var corrections = await _correctionService.GetAllAsync(userId, CorrectionFields.PageAtelier);
             _correctionService.ApplyAtelier(all, corrections);
 
-            var manual = _db.Projets.ToList();
+            var manual = _db.Projets.Where(p => p.UserId == userId).ToList();
             all.AddRange(manual);
 
             AllProjets = all.Where(p => p.DateRequise.HasValue).ToList();
@@ -650,12 +655,14 @@ public class RapportsModel : PageModel
 
     private async Task LoadOfsAsync()
     {
-        var filePath = Path.Combine(_env.WebRootPath, "files", "AvancementOF", "Avancement des OF - Heures à faire.xlsx");
-        if (!System.IO.File.Exists(filePath)) return;
+        var userId = CurrentUserId;
+        var bytes = await _uploadService.GetBytesAsync(userId, CorrectionFields.PageAvancement);
+        if (bytes is null) return;
 
         try
         {
-            using var workbook = new XLWorkbook(filePath);
+            using var stream = new MemoryStream(bytes);
+            using var workbook = new XLWorkbook(stream);
             var ws = workbook.Worksheet(1);
             var range = ws.RangeUsed();
             if (range is null) return;
@@ -703,10 +710,10 @@ public class RapportsModel : PageModel
                 all.Add(ordre);
             }
 
-            var corrections = await _correctionService.GetAllAsync(CorrectionFields.PageAvancement);
+            var corrections = await _correctionService.GetAllAsync(userId, CorrectionFields.PageAvancement);
             _correctionService.ApplyAvancement(all, corrections);
 
-            var manual = _db.ManuelOFs.ToList();
+            var manual = _db.ManuelOFs.Where(m => m.UserId == userId).ToList();
             all.AddRange(manual.Select(ToAvancement));
 
             Ordres = all.Where(o =>

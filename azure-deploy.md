@@ -71,20 +71,12 @@ az webapp restart --resource-group $RESOURCE_GROUP --name $APP_NAME
 
 ## 5. Configurer les variables d'environnement
 
-**Stockage SQLite** : le fichier `.db` est volatil dans un conteneur. Monter un volume persistant (Azure Files) pointé sur `/data` :
+L'application utilise **PostgreSQL (Neon, plan gratuit sans carte, IPv4)** — tous les fichiers Excel uploadés et les données sont stockés dans la base, donc rien de volatil dans le conteneur :
 
 ```bash
-az webapp config storage-account add \
-  --resource-group $RESOURCE_GROUP \
-  --name $APP_NAME \
-  --custom-id persistent-share \
-  --storage-type AzureFiles \
-  --account-name <STORAGE_ACCOUNT> --share-name <SHARE_NAME> \
-  --access-key <ACCESS_KEY> --mount-path /data
-
 # Définir les variables d'environnement
 az webapp config appsettings set --resource-group $RESOURCE_GROUP --name $APP_NAME --settings \
-  ConnectionStrings__DefaultConnection="Data Source=/data/qdvapp.db" \
+  ConnectionStrings__DefaultConnection="Host=ep-<id>-pooler.us-east-2.aws.neon.tech;Port=5432;Database=neondb;Username=<user>;Password=<password>;SSL Mode=Require" \
   Smtp__Host="smtp.gmail.com" \
   Smtp__Port="587" \
   Smtp__FromEmail="duboisbegl@gmail.com" \
