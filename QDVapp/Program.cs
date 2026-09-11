@@ -17,6 +17,7 @@ public class Program
 
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ??
                                throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+        connectionString = NormalizeConnectionString(connectionString);
         builder.Services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString));
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
@@ -88,5 +89,32 @@ public class Program
     private sealed class ThemePayload
     {
         public bool Bright { get; set; }
+    }
+
+    private static string NormalizeConnectionString(string cs)
+    {
+        if (!cs.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+            !cs.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+            return cs;
+
+        var uri = new Uri(cs);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var parts = new List<string>
+        {
+            $"Host={uri.Host}",
+            $"Port={(uri.Port > 0 ? uri.Port : 5432)}",
+            $"Database={uri.AbsolutePath.TrimStart('/')}",
+            $"Username={Uri.UnescapeDataString(userInfo[0])}",
+            $"Password={Uri.UnescapeDataString(userInfo[1])}"
+        };
+
+        foreach (var q in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = q.Split('=', 2);
+            if (kv[0].Equals("sslmode", StringComparison.OrdinalIgnoreCase))
+                parts.Add($"SSL Mode={kv[1]}");
+        }
+
+        return string.Join(";", parts);
     }
 }
